@@ -1,0 +1,44 @@
+#!/bin/sh
+# Speak a watcher's news. The calling command only detects that something is
+# new; WalkieOne's alert writer (a model with no tools) reads the new items with
+# the User's rule and says it, or decides nothing is worth saying. If the model
+# is unavailable, the plain --fallback is spoken instead. New items on stdin.
+set -u
+
+usage() {
+    echo "usage: walkieone-alert --source NAME --fallback TEXT --idempotency-key KEY [--rule TEXT] < new-items" >&2
+    exit 2
+}
+
+source_name=""
+fallback=""
+key=""
+rule=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --source) [ "$#" -ge 2 ] || usage; source_name=$2; shift 2 ;;
+        --fallback) [ "$#" -ge 2 ] || usage; fallback=$2; shift 2 ;;
+        --idempotency-key) [ "$#" -ge 2 ] || usage; key=$2; shift 2 ;;
+        --rule) [ "$#" -ge 2 ] || usage; rule=$2; shift 2 ;;
+        *) usage ;;
+    esac
+done
+[ -n "$source_name" ] && [ -n "$fallback" ] && [ -n "$key" ] || usage
+
+socket_path=${WALKIEONE_SEND_SOCKET:-"$HOME/.relay/ipc/send.sock"}
+response=$(/usr/bin/curl --silent --fail-with-body --max-time 90 \
+    --unix-socket "$socket_path" \
+    --request POST http://localhost/v1/alerts \
+    --header 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode "source=$source_name" \
+    --data-urlencode "fallback=$fallback" \
+    --data-urlencode "idempotency_key=$key" \
+    --data-urlencode "rule=$rule" \
+    --data-urlencode "items@-")
+status=$?
+if [ -z "$response" ]; then
+    /usr/bin/printf '%s\n' '{"v":1,"status":"rejected","reason":"walkieone_not_running"}'
+    exit 3
+fi
+/usr/bin/printf '%s\n' "$response"
+exit "$status"

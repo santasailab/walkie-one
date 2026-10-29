@@ -1,0 +1,110 @@
+#!/bin/sh
+set -u
+
+text=""
+idempotency_key=""
+not_before=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --at)
+            [ "$#" -ge 2 ] || { echo "missing --at value" >&2; exit 2; }
+            not_before=$2
+            shift 2
+            ;;
+        --text)
+            [ "$#" -ge 2 ] || { echo "missing --text value" >&2; exit 2; }
+            text=$2
+            shift 2
+            ;;
+        --idempotency-key)
+            [ "$#" -ge 2 ] || {
+                echo "missing --idempotency-key value" >&2
+                exit 2
+            }
+            idempotency_key=$2
+            shift 2
+            ;;
+        *)
+            echo "usage: walkieone-send --text TEXT [--idempotency-key KEY] [--at UNIX_SECONDS]" >&2
+            exit 2
+            ;;
+    esac
+done
+
+[ -n "$text" ] || { echo "missing --text" >&2; exit 2; }
+if [ -z "$idempotency_key" ]; then
+    idempotency_key=$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')
+fi
+
+socket_path=${WALKIEONE_SEND_SOCKET:-"$HOME/.relay/ipc/send.sock"}
+response=""
+status=0
+if [ -z "$not_before" ]; then
+response=$(/usr/bin/curl --silent --fail-with-body --max-time 15 \
+    --unix-socket "$socket_path" \
+    --request POST http://localhost/v1/messages \
+    --header 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode "text=$text" \
+    --data-urlencode "idempotency_key=$idempotency_key" \
+    --data-urlencode "turn=${WALKIEONE_TURN:-}")
+status=$?
+fi
+# Any answer from WalkieOne is the outcome, including a refusal: an oversized
+# or unauthorized send must be reported, never quietly re-queued as if the
+# message were still on its way.
+if [ -n "$response" ]; then
+    /usr/bin/printf '%s\n' "$response"
+    exit "$status"
+fi
+
+# The socket is a network operation, and a coding agent normally runs under a
+# sandbox that denies the network while allowing it to write its own workspace.
+# So leave the send as a file there and let WalkieOne do the network part. This
+# is also what survives WalkieOne restarting during a long wait.
+outbox=${WALKIEONE_OUTBOX:-"$HOME/.relay/agent/outbox"}
+name=$(/usr/bin/printf '%s' "$idempotency_key" | /usr/bin/tr -c '[:alnum:]._-' '_')
+if /bin/mkdir -p "$outbox" 2>/dev/null; then
+    /bin/chmod 700 "$outbox" 2>/dev/null || true
+    request="$outbox/$name.request.json"
+    receipt="$outbox/$name.receipt.json"
+    /bin/rm -f "$receipt" 2>/dev/null || true
+    if /usr/bin/printf '%s' "$text" | /usr/bin/python3 -c '
+import json, os, sys
+text = sys.stdin.read()
+target = sys.argv[1]
+payload = {"v": 1, "text": text, "idempotency_key": sys.argv[2]}
+if len(sys.argv) > 3 and sys.argv[3]:
+    payload["not_before"] = float(sys.argv[3])
+if len(sys.argv) > 4 and sys.argv[4]:
+    payload["turn"] = sys.argv[4]
+temporary = target + ".partial"
+with open(temporary, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle)
+os.chmod(temporary, 0o600)
+os.replace(temporary, target)
+' "$request" "$idempotency_key" "$not_before" "${WALKIEONE_TURN:-}" 2>/dev/null; then
+        # Wait briefly for WalkieOne to answer, so a turn still learns whether
+        # the message was accepted rather than assuming it was.
+        # Tenths of a second to wait for WalkieOne to answer. Bounded so a
+        # detached job cannot hang forever when WalkieOne is not running.
+        limit=${WALKIEONE_SEND_WAIT:-30}
+        waited=0
+        while [ "$waited" -lt "$limit" ]; do
+            if [ -f "$receipt" ]; then
+                /bin/cat "$receipt"
+                /bin/rm -f "$receipt" 2>/dev/null || true
+                exit 0
+            fi
+            /bin/sleep 0.5
+            waited=$((waited + 1))
+        done
+        /usr/bin/printf '%s\n' '{"v":1,"status":"pending","reason":"walkieone_not_running"}'
+        exit 3
+    fi
+fi
+
+if [ -z "$response" ]; then
+    response='{"v":1,"status":"rejected","reason":"walkieone_unreachable"}'
+fi
+/usr/bin/printf '%s\n' "$response"
+exit "$status"

@@ -1,0 +1,7 @@
+-r personal-server/requirements.txt
+pytest>=8,<10
+httpx>=0.28,<1
+cryptography>=46
+jsonschema>=4.25,<5
+ruff>=0.16.7,<1
+pip-audit>=2.9,<3

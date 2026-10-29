@@ -1,0 +1,80 @@
+#!/bin/sh
+# Register, run, list, or remove a Background Task that WalkieOne starts on an
+# interval. Tasks run inside WalkieOne, so they use its macOS permissions.
+set -u
+
+usage() {
+    cat >&2 <<'EOF'
+usage: walkieone-task add NAME --every SECONDS [--timeout SECONDS] -- COMMAND [ARG...]
+       walkieone-task run NAME
+       walkieone-task list
+       walkieone-task remove NAME
+EOF
+    exit 2
+}
+
+socket_path=${WALKIEONE_SEND_SOCKET:-"$HOME/.relay/ipc/send.sock"}
+
+post() {
+    operation=$1
+    max_time=$2
+    shift 2
+    response=$(/usr/bin/curl --silent --fail-with-body --max-time "$max_time" \
+        --unix-socket "$socket_path" \
+        --request POST "http://localhost/v1/tasks/$operation" \
+        --header 'Content-Type: application/x-www-form-urlencoded' "$@")
+    status=$?
+    if [ -z "$response" ]; then
+        /usr/bin/printf '%s\n' '{"v":1,"status":"rejected","reason":"walkieone_not_running"}'
+        exit 3
+    fi
+    /usr/bin/printf '%s\n' "$response"
+    exit "$status"
+}
+
+[ "$#" -ge 1 ] || usage
+operation=$1
+shift
+case "$operation" in
+    add)
+        [ "$#" -ge 1 ] || usage
+        name=$1
+        shift
+        every=""
+        timeout=""
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --every) [ "$#" -ge 2 ] || usage; every=$2; shift 2 ;;
+                --timeout) [ "$#" -ge 2 ] || usage; timeout=$2; shift 2 ;;
+                --) shift; break ;;
+                *) usage ;;
+            esac
+        done
+        [ -n "$every" ] && [ "$#" -ge 1 ] || usage
+        # Turn the remaining words into one form field each, keeping spaces.
+        count=$#
+        for argument in "$@"; do
+            set -- "$@" --data-urlencode "arg=$argument"
+        done
+        shift "$count"
+        set -- "$@" --data-urlencode "name=$name" --data-urlencode "every=$every"
+        if [ -n "$timeout" ]; then
+            set -- "$@" --data-urlencode "timeout=$timeout"
+        fi
+        post add 15 "$@"
+        ;;
+    run)
+        [ "$#" -eq 1 ] || usage
+        # A run may legitimately wait up to its own one-hour timeout limit.
+        post run 3700 --data-urlencode "name=$1"
+        ;;
+    remove)
+        [ "$#" -eq 1 ] || usage
+        post remove 15 --data-urlencode "name=$1"
+        ;;
+    list)
+        [ "$#" -eq 0 ] || usage
+        post list 15 --data "v=1"
+        ;;
+    *) usage ;;
+esac

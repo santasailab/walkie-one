@@ -1,0 +1,447 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Relay device contract v1",
+  "description": "The complete control contract on the Device WebSocket. Customer frames travel between cloud, Link, and the handheld; the relay adds the rolling-firmware `peer` compatibility fact and authoritative `presence`. Text frames are the JSON below, binary frames between talk.start and talk.end are raw PCM16 mono 24 kHz little-endian microphone audio, and binary frames between audio.start and audio.end are one MP3 stream (MPEG-2 Layer III, mono, 24 kHz, 48 kbit/s) split at arbitrary byte boundaries. WebSocket already separates the two, so there is no envelope. Every message carries `v`, so old firmware is caught rather than silently misparsed, and every object sets additionalProperties:false, so an unknown field is a loud failure instead of a silent one.",
+  "x-transport": {
+    "endpoint": "The Device and selected Link independently dial the cloud relay over authenticated WSS because both may sit behind carrier or home-network NAT.",
+    "audio": "Binary frames. Playback is framed by audio.start/audio.end, mic capture by talk.start/talk.end. Never both at once - the device is half duplex.",
+    "playback_delivery": "A Device declaring preload:true receives playback frames before Listen. The physical Device stages the complete span, advertises it with the LED only after audio.end, and begins playback on Listen. A network stall delays readiness instead of creating silence after the button press or between words. It never waits for an ack between chunks.",
+    "fragmentation": "One logical message is not guaranteed to be one frame in either direction. Control JSON is well under 1 KB; audio is sent as many small binary frames rather than one large one."
+  },
+  "oneOf": [
+    {"$ref": "#/$defs/hello"},
+    {"$ref": "#/$defs/digest"},
+    {"$ref": "#/$defs/audio_span"},
+    {"$ref": "#/$defs/listen"},
+    {"$ref": "#/$defs/talk_span"},
+    {"$ref": "#/$defs/cancel"},
+    {"$ref": "#/$defs/ack"},
+    {"$ref": "#/$defs/ack.confirmed"},
+    {"$ref": "#/$defs/audio_retry"},
+    {"$ref": "#/$defs/dismiss"},
+    {"$ref": "#/$defs/status"},
+    {"$ref": "#/$defs/peer"},
+    {"$ref": "#/$defs/presence"},
+    {"$ref": "#/$defs/firmware_available"},
+    {"$ref": "#/$defs/firmware_status"},
+    {"$ref": "#/$defs/muse_pair_start"},
+    {"$ref": "#/$defs/muse_pair_open"},
+    {"$ref": "#/$defs/muse_pair_complete"},
+    {"$ref": "#/$defs/muse_pair_done"}
+  ],
+  "$defs": {
+    "hello": {
+      "title": "device -> application transport. Capabilities after connecting or an endpoint reappears.",
+      "description": "Declares whether the Device supports silent preloading. Send on Device connection and again whenever the effective endpoint becomes usable. For a preload-capable Device, a new hello is also a Device-session boundary: cloud discards any volatile unacknowledged span and renders the durable Snapshot again, because a cellular reconnect clears the Device's volatile audio. The handheld sits on a table, so audio waits for the Listen button and the LED carries the news instead. Absent autoplay means true for rolling firmware compatibility.",
+      "type": "object",
+      "required": ["v", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "hello"},
+        "autoplay": {
+          "type": "boolean",
+          "description": "false on the handheld: hold speech until Listen is pressed."
+        },
+        "preload": {
+          "type": "boolean",
+          "description": "true when an autoplay:false Device can stage one complete audio span silently before Listen. Absent or false preserves request-on-Listen behavior for older firmware."
+        },
+        "board": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{1,16}$",
+          "description": "Hardware board id, e.g. 06. Selects which firmware image applies. Reported together with firmware."
+        },
+        "firmware": {
+          "type": "string",
+          "pattern": "^[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4}$",
+          "maxLength": 32,
+          "description": "Running firmware version, major.minor.patch. Cloud answers with firmware.available."
+        },
+        "firmware_failed": {
+          "type": "string",
+          "pattern": "^[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4}$",
+          "maxLength": 32,
+          "description": "Version the Device rejected or rolled back from, so cloud does not offer it again."
+        },
+        "updates": {
+          "enum": ["auto", "manual"],
+          "description": "`manual` is a build without the official release flag; cloud offers it nothing. Absent means auto."
+        }
+      },
+      "dependentRequired": {
+        "firmware": ["board"],
+        "board": ["firmware"],
+        "firmware_failed": ["firmware"]
+      },
+      "examples": [
+        {"v": 1, "type": "hello", "autoplay": false, "preload": true, "board": "06", "firmware": "1.0.0"},
+        {"v": 1, "type": "hello", "autoplay": false, "preload": true, "board": "06", "firmware": "1.0.0", "firmware_failed": "1.1.0"},
+        {"v": 1, "type": "hello", "autoplay": false, "preload": true},
+        {"v": 1, "type": "hello", "autoplay": false},
+        {"v": 1, "type": "hello", "autoplay": false, "preload": true, "board": "06", "firmware": "1.0.0", "updates": "manual"},
+        {"v": 1, "type": "hello"}
+      ]
+    },
+
+    "digest": {
+      "title": "application transport -> device. What is waiting, and whether it needs an answer.",
+      "description": "Sent whenever the count changes, including down to zero. A preload-capable Device stores this state but only advertises it after a complete audio span is staged. The device already knows when it is playing and recording, so it colours those itself.",
+      "type": "object",
+      "required": ["v", "type", "missed", "needs_answer", "ts"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "digest"},
+        "missed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many utterances remain unheard, including any complete span staged on the Device. 0 means LED off."
+        },
+        "needs_answer": {
+          "type": "boolean",
+          "description": "The Agent's final spoken response is a voice-answerable question. It remains transport metadata and does not change the Device's yellow unread-message light. Hold Speak to answer it in the next turn."
+        },
+        "dismissible": {
+          "type": "boolean",
+          "description": "Deprecated. Current relays send false: user gestures never delete unread replies."
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "The first line of what is waiting. There is no screen on the handheld, so this is for diagnostics and logs. The Device may ignore it."
+        },
+        "ts": {"type": "string", "description": "ISO 8601 UTC."}
+      },
+      "examples": [
+        {"v": 1, "type": "digest", "missed": 0, "needs_answer": false,
+         "summary": "", "ts": "2026-08-06T18:04:11Z"},
+        {"v": 1, "type": "digest", "missed": 3, "needs_answer": false, "dismissible": true,
+         "summary": "The build finished.", "ts": "2026-08-06T18:04:11Z"},
+        {"v": 1, "type": "digest", "missed": 1, "needs_answer": true,
+         "summary": "The scheduled check needs an answer.", "ts": "2026-08-06T18:04:11Z"}
+      ]
+    },
+
+    "audio_span": {
+      "title": "application transport -> device. Binary frames between these two are playback.",
+      "description": "Stage the complete span. A preload-capable Device waits for Listen before playing it; a legacy Device may play immediately. The id is what the ack quotes back after playback finishes. audio.end with complete:false means transmission stopped early: discard every staged byte and do not ack it. Repeating audio.start for an exact preloaded id followed by audio.end complete:false is also the rolling-compatible way to retract short-lived, unheard interaction speech.",
+      "type": "object",
+      "required": ["v", "type", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"enum": ["audio.start", "audio.end"]},
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Identifies this span. Quote it in the ack so the application clears exactly what was heard."
+        },
+        "complete": {
+          "type": "boolean",
+          "description": "On audio.end, false means the sender was interrupted before the complete span transferred. The Device discards the staged bytes and sends no ack. Absent means true for compatibility with older application engines. Ignored on audio.start."
+        }
+      },
+      "examples": [
+        {"v": 1, "type": "audio.start", "id": "b_reply"},
+        {"v": 1, "type": "audio.end", "id": "b_reply", "complete": true},
+        {"v": 1, "type": "audio.end", "id": "b_reply", "complete": false}
+      ]
+    },
+
+    "listen": {
+      "title": "device -> application transport. Top button when no complete span is staged locally.",
+      "type": "object",
+      "required": ["v", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "listen"}
+      },
+      "examples": [{"v": 1, "type": "listen"}]
+    },
+
+    "talk_span": {
+      "title": "device -> application transport. Middle button held. Binary frames between these two are mic audio.",
+      "description": "Raw PCM16 mono 24 kHz samples, at most 900 seconds (43,200,000 bytes) per span. The Device stops capture on release or at 15 minutes and sends talk.end; the relay rejects overflow without transcribing a partial request. The Device does no voice activity detection, noise suppression, or endpointing. The replaceable cloud Speech adapter transcribes every accepted turn. Deploy longer-input cloud and Link support before updating firmware; older relays accept only 60 seconds. Frame shape remains v1.",
+      "type": "object",
+      "required": ["v", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"enum": ["talk.start", "talk.end"]}
+      },
+      "examples": [
+        {"v": 1, "type": "talk.start"},
+        {"v": 1, "type": "talk.end"}
+      ]
+    },
+
+    "cancel": {
+      "title": "Deprecated Device control. Ignored by the relay.",
+      "deprecated": true,
+      "description": "Retained only for old clients. The relay consumes this frame without changing agent work, pending requests, or reply delivery. WalkieOne has no Device stop/cancel command; spoken words follow ordinary message admission. Do not emit this frame. It is never an application-to-Device control.",
+      "type": "object",
+      "required": ["v", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "cancel"}
+      },
+      "examples": [{"v": 1, "type": "cancel"}]
+    },
+
+    "ack": {
+      "title": "device -> application transport. Sent only after playback has finished draining.",
+      "description": "This is what clears the application queue. Acking on 'started' silently loses anything that arrives mid-playback. A local user pause retains the complete span and sample position without an ack or retry; Listen resumes it and only the final drain acknowledges this ID. If the span is discarded, retry or reconnect restages it from the beginning.",
+      "type": "object",
+      "required": ["v", "type", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "ack"},
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "The id from the audio.start that was just played."
+        }
+      },
+      "examples": [{"v": 1, "type": "ack", "id": "b_reply"}]
+    },
+
+    "audio_retry": {
+      "title": "device -> application transport. The staged span was discarded unheard.",
+      "description": "Moves the named in-flight composition back to the application queue so it can be staged again. Sent after a playback fault or by older firmware on interruption. Current firmware retains complete audio and its cursor on a user pause without sending this event. It is not an ack and never clears speech.",
+      "type": "object",
+      "required": ["v", "type", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "audio.retry"},
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "The id from the discarded audio.start."
+        }
+      },
+      "examples": [{"v": 1, "type": "audio.retry", "id": "b_reply"}]
+    },
+
+    "ack.confirmed": {
+      "title": "relay -> device. Exact durable playback receipt committed.",
+      "description": "Sent only after the exact Snapshot played receipt is saved. The Device retries that receipt across reconnects until confirmed; an interrupted power supply may still cause replay.",
+      "type": "object",
+      "required": ["v", "type", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "ack.confirmed"},
+        "id": {"type": "string", "pattern": "^c_[a-f0-9]{32}$"}
+      },
+      "examples": [{"v": 1, "type": "ack.confirmed", "id": "c_0123456789abcdef0123456789abcdef"}]
+    },
+
+    "dismiss": {
+      "title": "Legacy device -> relay command. Restore the staged reply.",
+      "description": "Deprecated. Current firmware never emits this. Relays restore the exact staged reply for older firmware; this command never deletes unread speech.",
+      "type": "object",
+      "required": ["v", "type", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "dismiss"},
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "The exact staged audio.start id to restore."
+        }
+      },
+      "examples": [{"v": 1, "type": "dismiss", "id": "c_batch"}]
+    },
+
+    "status": {
+      "title": "device -> application transport. Occasional health. Lossy by design.",
+      "description": "Logged, never acted on. Once on connect, then every 15 minutes while connected. Not 60 seconds: that is 1440 transmissions a day of something nobody reads, on a device whose battery story is entirely about idle. The ping interval is already 240s, so this must never be the thing keeping the radio awake.",
+      "type": "object",
+      "required": ["v", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "status"},
+        "battery_pct": {"type": "integer", "minimum": 0, "maximum": 100},
+        "rssi": {"type": "integer", "maximum": 0, "description": "dBm, negative."},
+        "fw": {"type": "string", "maxLength": 32}
+      },
+      "examples": [
+        {"v": 1, "type": "status", "battery_pct": 63, "rssi": -75, "fw": "0.1.0"},
+        {"v": 1, "type": "status"}
+      ]
+    },
+
+    "peer": {
+      "title": "relay -> device. Rolling compatibility projection of Link availability.",
+      "description": "Sent immediately when the Device connects and whenever the selected Link appears or disappears. The established `mac` field name is retained for released firmware; `presence` is authoritative when supported.",
+      "type": "object",
+      "required": ["v", "type", "mac"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "peer"},
+        "mac": {"type": "boolean"}
+      },
+      "examples": [
+        {"v": 1, "type": "peer", "mac": true},
+        {"v": 1, "type": "peer", "mac": false}
+      ]
+    },
+
+    "presence": {
+      "title": "relay -> device. Independent cloud, Link, and Agent availability.",
+      "description": "The Device already knows when its own cloud WebSocket is down. While that socket is live, this event distinguishes a connected active Link from a coding Agent that is actually available. `busy` reports pending work, not refusal of another request: concurrency depends on the selected assistant. Firmware shows dim, slow-blinking blue while working, with complete unread speech taking priority as blinking yellow. `peer` remains only for rolling firmware compatibility.",
+      "type": "object",
+      "required": ["v", "type", "cloud", "link", "agent"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "presence"},
+        "cloud": {"const": true},
+        "link": {"type": "boolean"},
+        "agent": {"enum": ["unavailable", "ready", "busy"]},
+        "connection_state": {"enum": ["setup_required", "pairing", "checking", "ready_to_activate", "ready", "offline", "failed", "disconnected"], "description": "Optional authoritative hosted-connection lifecycle, shared with owner screens. Setup, pairing, checking and awaiting activation blink white rather than red. A check never grants routing authority."},
+        "ack_confirmations": {"type": "boolean", "description": "True when durable Snapshot playback receipts are confirmed with ack.confirmed. Optional for older relays."}
+      },
+      "examples": [
+        {"v": 1, "type": "presence", "cloud": true, "link": true, "agent": "ready"},
+        {"v": 1, "type": "presence", "cloud": true, "link": true, "agent": "busy"},
+        {"v": 1, "type": "presence", "cloud": true, "link": true, "agent": "unavailable"},
+        {"v": 1, "type": "presence", "cloud": true, "link": false, "agent": "unavailable"},
+        {"v": 1, "type": "presence", "cloud": true, "link": false, "agent": "unavailable", "connection_state": "checking"},
+        {"v": 1, "type": "presence", "cloud": true, "link": false, "agent": "unavailable", "connection_state": "failed"}
+      ]
+    },
+
+    "firmware_available": {
+      "title": "relay -> device. Firmware target for this Device's board.",
+      "description": "Sent after each hello from a Device that reports firmware, and on every target change. A version equal to the running firmware means no update: discard any staged image. url, size, sha256 and signature (Ed25519, base64, over the UTF-8 message \"walkieone-firmware\\n{board}\\n{version}\\n{sha256hex}\\n\") travel together; without them the frame only names the target version.",
+      "type": "object",
+      "required": ["v", "type", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "firmware.available"},
+        "revision": {"type": "integer", "minimum": 0, "maximum": 9007199254740991, "description": "Orders target changes, including pause. A Device ignores an older revision and acknowledges the accepted target with firmware.status. Optional only for relay-first rolling compatibility."},
+        "version": {"type": "string", "pattern": "^[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4}$", "maxLength": 32},
+        "url": {"type": "string", "pattern": "^https://", "maxLength": 512},
+        "size": {"type": "integer", "minimum": 1, "maximum": 4194304},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "signature": {"type": "string", "pattern": "^[A-Za-z0-9+/]{86}==$"}
+      },
+      "dependentRequired": {
+        "url": ["size", "sha256", "signature"],
+        "size": ["url", "sha256", "signature"],
+        "sha256": ["url", "size", "signature"],
+        "signature": ["url", "size", "sha256"]
+      },
+      "examples": [
+        {"v": 1, "type": "firmware.available", "version": "1.0.0"},
+        {"v": 1, "type": "firmware.available", "version": "1.1.0", "url": "https://example.com/06/1.1.0.bin", "size": 1048576, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="}
+      ]
+    },
+
+    "firmware_status": {
+      "title": "device -> cloud. Update acceptance or a meaningful attempt outcome.",
+      "description": "Reports the exact target revision/version. This is not a periodic heartbeat. Receipt acknowledges target delivery, not successful installation. hello.firmware remains the running-version authority. Repeated identical targets preserve the Device's persisted retry schedule.",
+      "type": "object",
+      "required": ["v", "type", "revision", "version", "state"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "firmware.status"},
+        "revision": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "version": {"type": "string", "pattern": "^[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4}$", "maxLength": 32},
+        "state": {"enum": ["accepted", "downloading", "retrying", "staged", "installed", "failed"]},
+        "attempt": {"type": "integer", "minimum": 0, "maximum": 65535},
+        "retry_after_s": {"type": "integer", "minimum": 1, "maximum": 86400}
+      },
+      "if": {"properties": {"state": {"const": "retrying"}}},
+      "then": {"required": ["retry_after_s"]},
+      "else": {"not": {"required": ["retry_after_s"]}},
+      "examples": [
+        {"v": 1, "type": "firmware.status", "revision": 42, "version": "1.2.0", "state": "accepted"},
+        {"v": 1, "type": "firmware.status", "revision": 42, "version": "1.2.0", "state": "retrying", "attempt": 2, "retry_after_s": 600}
+      ]
+    },
+
+    "muse_pair_start": {
+      "title": "device -> cloud. Open one Muse gadget pairing window.",
+      "description": "Sent when the User triple-taps PTT. The Device opens Bluetooth only after `muse.pair.open` says ok, so a Channel without Muse fails at once with a red light instead of after the phone pairs.",
+      "type": "object",
+      "required": ["v", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "muse.pair.start"}
+      },
+      "examples": [
+        {"v": 1, "type": "muse.pair.start"}
+      ]
+    },
+
+    "muse_pair_open": {
+      "title": "cloud -> device. Answer to muse.pair.start.",
+      "description": "`ok:true` may carry the Gadget SDK token the Device reports to the Muse app while pairing. The Device keeps it only in RAM for the pairing window. `muse_not_set_up`: the Channel has no Muse connection; `unavailable`: the cloud could not answer.",
+      "type": "object",
+      "required": ["v", "type", "ok"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "muse.pair.open"},
+        "ok": {"type": "boolean"},
+        "sdk_token": {"type": "string", "minLength": 1, "maxLength": 256},
+        "reason": {"enum": ["muse_not_set_up", "unavailable"]}
+      },
+      "examples": [
+        {"v": 1, "type": "muse.pair.open", "ok": true, "sdk_token": "mgst_example"},
+        {"v": 1, "type": "muse.pair.open", "ok": false, "reason": "muse_not_set_up"}
+      ]
+    },
+
+    "muse_pair_complete": {
+      "title": "device -> cloud. The device tokens the Muse app provisioned over Bluetooth.",
+      "description": "Sent once, after `provision_v2` arrives over the encrypted pairing session. The Device never stores these tokens: the cloud seals them on the Channel's Muse connection and talks to Muse itself. `mac` is the Wi-Fi station MAC that names the gadget (`homelink-xxxxxx`) for token refresh. Never logged.",
+      "type": "object",
+      "required": ["v", "type", "access_token", "refresh_token", "noise_host", "mac"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "muse.pair.complete"},
+        "access_token": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "refresh_token": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "noise_host": {"type": "string", "minLength": 1, "maxLength": 253},
+        "api_url_v2": {"type": "string", "maxLength": 200},
+        "mac": {"type": "string", "pattern": "^[0-9a-f]{2}(:[0-9a-f]{2}){5}$"}
+      },
+      "examples": [
+        {"v": 1, "type": "muse.pair.complete", "access_token": "device-access", "refresh_token": "device-refresh", "noise_host": "hatch.metaaivm.com", "api_url_v2": "https://api.muse.ai", "mac": "88:56:a6:ac:9a:54"}
+      ]
+    },
+
+    "muse_pair_done": {
+      "title": "cloud -> device. Whether the Muse pairing was saved.",
+      "description": "The Device tells the Muse app `auth_ok` and shows green only after `ok:true`; otherwise it reports failure and shows red. `rejected`: the cloud refused the tokens.",
+      "type": "object",
+      "required": ["v", "type", "ok"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {"const": 1},
+        "type": {"const": "muse.pair.done"},
+        "ok": {"type": "boolean"},
+        "reason": {"enum": ["muse_not_set_up", "rejected", "unavailable"]}
+      },
+      "examples": [
+        {"v": 1, "type": "muse.pair.done", "ok": true},
+        {"v": 1, "type": "muse.pair.done", "ok": false, "reason": "rejected"}
+      ]
+    }
+  }
+}

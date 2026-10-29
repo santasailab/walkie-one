@@ -1,0 +1,5 @@
+target-version = "py312"
+
+[lint]
+# Preserve the maintained runtime's formatting while checking correctness.
+select = ["E9", "F63", "F7", "F82"]
