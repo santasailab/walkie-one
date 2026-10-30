@@ -20,7 +20,7 @@ The walkthrough does not claim that a physical kit can be connected yet.
 ## First-time setup on a Mac
 
 An AI can walk through this guide with you using the
-[single setup prompt](../README.md#set-it-up-with-your-ai). You can also follow
+[single setup prompt](../docs/ai-setup.md). You can also follow
 the commands yourself. Start here even if Git and Python are not installed.
 Nothing in our setup scripts installs system packages, creates provider accounts,
 opens a public tunnel, or touches a handheld automatically.
@@ -411,7 +411,7 @@ provides a credential for company services.
 ## Have your AI help—or do it yourself
 
 Every command above is usable without an AI. To delegate the same work, use
-the [single setup prompt](../README.md#set-it-up-with-your-ai) in the root README.
+the [single setup prompt](../docs/ai-setup.md).
 
 To build a different implementation:
 
