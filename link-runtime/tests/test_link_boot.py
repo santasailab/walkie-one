@@ -9,7 +9,6 @@ shipped once: Link died the instant it launched and the Mac app could only say
 from __future__ import annotations
 
 import json
-import os
 import socket
 import subprocess
 import sys
@@ -37,12 +36,13 @@ def link_daemon():
     # usual long pytest temporary directory.
     directory = tempfile.TemporaryDirectory(prefix="w1-boot-", dir="/tmp")
     root = Path(directory.name)
-    environment = dict(os.environ)
+    environment = {"PATH": "/usr/bin:/bin", "HOME": str(root)}
     environment.update(
         LINK_HOST="127.0.0.1",
         LINK_PORT=str(port),
         LINK_AUTH="test-token",
-        RELAY_HOME=str(root / "relay"),
+        WALKIEONE_STATE_DIRECTORY=str(root / "relay"),
+        WALKIEONE_WORKSPACE=str(root / "relay" / "agent"),
         WALKIEONE_SEND_SOCKET=str(root / "send.sock"),
         WALKIEONE_OUTBOX=str(root / "outbox"),
         WALKIEONE_TASKS=str(root / "tasks"),

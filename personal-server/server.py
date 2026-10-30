@@ -260,7 +260,9 @@ class PersonalServer:
             try:
                 message = json.loads(frame) if isinstance(frame, str) else None
                 if isinstance(frame, str) and (
-                    not isinstance(message, dict) or message.get("v") != 1
+                    not isinstance(message, dict)
+                    or type(message.get("v")) is not int
+                    or message.get("v") != 1
                 ):
                     raise ValueError("Invalid message")
                 if role == "device":
@@ -343,7 +345,7 @@ class PersonalServer:
                             self.pending.pop(message["id"], None)
                             if kind == "link.turn.result":
                                 self.record(pair, "reply_generated", message["text"])
-            except (ValueError, TypeError, KeyError):
+            except (ValueError, TypeError, KeyError, RecursionError):
                 await peer.socket.close(4400, "Invalid protocol message")
                 return
 

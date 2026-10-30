@@ -1,0 +1,9 @@
+title = "Walkie One source and history checks"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "walkieone-client-credential"
+description = "Generated device or standalone Link credential"
+regex = '''\bv(?:1\.[a-z0-9-]{1,32}\.device|2\.[A-Za-z0-9-]{1,64}\.[A-Za-z0-9-]{1,64}\.link)\.[A-Za-z0-9_-]{43}'''

@@ -68,9 +68,13 @@ def link_environment(
             raise ValueError("A private local command file is required")
         load_command(command_file)
         environment["WALKIEONE_CUSTOM_COMMAND"] = str(Path(command_file).resolve())
-    state = (
-        Path.home() / ".relay" / "servers" / hashlib.sha256(url.encode()).hexdigest()
-    )
+    server_id = hashlib.sha256(url.encode()).hexdigest()
+    state = Path.home() / ".relay" / "servers" / server_id
+    # Keep the Unix path short enough for macOS and separate from the consumer
+    # app's send.sock. Never inherit another Link's control socket from the shell.
+    send_socket = Path.home() / ".relay" / "ipc" / f"p-{server_id[:20]}.sock"
+    if len(os.fsencode(send_socket)) >= 104:
+        raise ValueError("Home path is too long for a private Link control socket")
     environment.update(
         RELAY_CLOUD_URL=url,
         RELAY_TOKEN=credential,
@@ -78,6 +82,7 @@ def link_environment(
         LINK_HOST="127.0.0.1",
         LINK_PORT="0",
         LINK_AUTH=secrets.token_urlsafe(32),
+        WALKIEONE_SEND_SOCKET=str(send_socket),
         WALKIEONE_STATE_DIRECTORY=str(state),
         WALKIEONE_WORKSPACE=str(state / "agent"),
         WALKIEONE_OUTBOX=str(state / "agent" / "outbox"),

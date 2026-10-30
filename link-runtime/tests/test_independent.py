@@ -11,7 +11,8 @@ module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(module)
 
 
-def test_link_only_needs_scoped_profile(tmp_path):
+def test_link_only_needs_scoped_profile(tmp_path, monkeypatch):
+    monkeypatch.setenv("WALKIEONE_SEND_SOCKET", "/another-link/send.sock")
     path = tmp_path / "link.json"
     profile = {
         "url": "wss://relay.example.org/link",
@@ -24,6 +25,8 @@ def test_link_only_needs_scoped_profile(tmp_path):
     assert environment["RELAY_TOKEN"] == profile["credential"]
     assert environment["LINK_HOST"] == "127.0.0.1"
     assert environment["LINK_PORT"] == "0"
+    assert environment["WALKIEONE_SEND_SOCKET"] != "/another-link/send.sock"
+    assert environment["WALKIEONE_SEND_SOCKET"].endswith(".sock")
     assert len(environment["LINK_AUTH"]) >= 43
     assert environment["LINK_AUTH"] != profile["credential"]
     assert (
@@ -39,6 +42,7 @@ def test_link_only_needs_scoped_profile(tmp_path):
     assert (
         other["WALKIEONE_STATE_DIRECTORY"] != environment["WALKIEONE_STATE_DIRECTORY"]
     )
+    assert other["WALKIEONE_SEND_SOCKET"] != environment["WALKIEONE_SEND_SOCKET"]
     path.chmod(0o644)
     with pytest.raises(ValueError):
         module.link_environment(path, "codex")

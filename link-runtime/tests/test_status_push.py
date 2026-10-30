@@ -6,11 +6,34 @@ import sys
 from pathlib import Path
 
 import websockets
+import pytest
 from websockets.frames import Close
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
 import link
+
+
+@pytest.mark.parametrize("configured", ["", "configured-test-token"])
+def test_local_http_and_agent_sockets_require_a_configured_matching_token(
+    monkeypatch, configured
+):
+    monkeypatch.setattr(link, "AUTH", configured)
+
+    async def exercise():
+        for token in (None, "", "wrong-token", "not-ascii-\u2603"):
+            assert (await link.http_route("/status", token))[0].value == 401
+        async with websockets.serve(link._local_agent_socket, "127.0.0.1", 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            for route in ("agent", "interaction", "events"):
+                async with websockets.connect(f"ws://127.0.0.1:{port}/{route}") as peer:
+                    with pytest.raises(websockets.ConnectionClosedError) as closed:
+                        await peer.recv()
+                    assert closed.value.rcvd.code == 4401
+        if configured:
+            assert link.authorized(configured)
+
+    asyncio.run(asyncio.wait_for(exercise(), 3))
 
 
 class _Relay:

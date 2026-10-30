@@ -14,6 +14,22 @@ before publication.
 Use Python 3.12 on macOS or Linux. Run `./scripts/setup.sh`, then
 `./scripts/check.sh`. Tests use isolated temporary state, generated credentials,
 fixture assistants, and loopback sockets. They do not need a company account.
+With Gitleaks 8.30.1 installed, also run `./scripts/security.sh` before pushing.
+CI checks the same commands. Never disable a security check to get a green run;
+investigate the finding and keep any sensitive reproduction outside Git.
+
+To update dependencies, install `pip-tools` in your development environment,
+edit the owning `.in` file, and regenerate both locks:
+
+```sh
+.venv/bin/pip-compile --generate-hashes --strip-extras \
+  --output-file=personal-server/requirements.txt personal-server/requirements.in
+.venv/bin/pip-compile --allow-unsafe --generate-hashes \
+  --output-file=requirements-dev.txt requirements-dev.in
+```
+
+Reinstall with `./scripts/setup.sh`, rerun both checks, and update the dependency
+inventory when versions or license notices change.
 
 Use a branch and pull request for changes after the initial repository import.
 Keep each PR focused, include meaningful regression tests, and update the

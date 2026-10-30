@@ -10,6 +10,7 @@ installs their distributions, including their license files.
 Versions come from `personal-server/requirements.txt`; license identifiers below
 come from the installed distribution metadata. Verify license files and required
 notices again when preparing a public or bundled binary release.
+Both runtime and development lockfiles pin package versions and download hashes.
 
 | Package | Version | Declared license |
 | --- | --- | --- |
