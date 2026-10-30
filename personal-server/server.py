@@ -412,6 +412,23 @@ def transcript_log(directory, enabled):
     return logger
 
 
+def speech_from_config(config):
+    """Use only this server's speech settings, including during setup checks."""
+    for name in list(os.environ):
+        if name.startswith(
+            (
+                "AZURE_",
+                "DEEPGRAM_",
+                "WALKIEONE_STT_",
+                "WALKIEONE_TTS_",
+                "WALKIEONE_SPEECH_",
+            )
+        ):
+            del os.environ[name]
+    os.environ.update(config["speech"])
+    return configured_speech()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -479,20 +496,7 @@ def main():
                 "Saved. Restart the server to apply; import changed client profiles again."
             )
             return
-        # Never inherit company speech credentials/configuration into this process.
-        for name in list(os.environ):
-            if name.startswith(
-                (
-                    "AZURE_",
-                    "DEEPGRAM_",
-                    "WALKIEONE_STT_",
-                    "WALKIEONE_TTS_",
-                    "WALKIEONE_SPEECH_",
-                )
-            ):
-                del os.environ[name]
-        os.environ.update(config["speech"])
-        speech = configured_speech()
+        speech = speech_from_config(config)
         if args.action == "check":
             print(
                 "Private configuration and speech settings valid. No provider/network call made."
