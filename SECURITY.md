@@ -30,6 +30,8 @@ reporting channel exists until it has been verified.
   permissions. A custom command is not sandboxed. Retain assistant approvals and
   grant access only to intended files/tools. The standalone launcher binds its
   local control listener to loopback with a fresh, unprinted authentication token.
+  Missing local authentication denies access. Its per-server Unix socket is
+  separate from other standalone Links and the consumer Mac app.
 - Multiple devices share one trusted assistant context. This is not a tenant
   isolation boundary. The server prevents cross-device reply acknowledgment and
   steering, but participants can ask the same assistant about shared work.
@@ -41,6 +43,17 @@ reporting channel exists until it has been verified.
   when the assistant may already have acted.
 
 ## Repository checks
+
+Run `./scripts/security.sh` after `./scripts/setup.sh`, with Gitleaks 8.30.1
+installed. It scans both committed history and the current non-ignored source,
+checks dependency advisories, and verifies that generated test credentials are
+actually detected. The custom Gitleaks rule covers device and Link tokens;
+default rules still cover common service credentials and private keys.
+
+The source check rejects generated profiles even after they are renamed, and
+rejects forced additions of private configuration and transcript files. CI uses
+read-only GitHub permissions and does not retain checkout credentials in Git.
+Runtime and test dependencies have exact versions and verified download hashes.
 
 CI scans source/history for secrets, checks dependency advisories, and exercises
 authentication, malformed input, device routing, TLS, steering, approvals, and

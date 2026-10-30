@@ -3,6 +3,40 @@
 The repository is private. Completing software tests does not authorize changing
 its visibility, publishing packages, or releasing firmware.
 
+## Software-only scope
+
+The first source release can contain the personal server, standalone Link,
+protocol, tests, and documentation while firmware remains a separate milestone.
+Keep `firmware/README.md` as the integration checklist; do not add board images,
+provisioning claims, or flashing commands until those paths are verified.
+Keep the company backend, accounts, production configuration, and native app
+out of this distribution.
+
+## Repeatable readiness checks
+
+From a fresh clone, run:
+
+```sh
+./scripts/setup.sh
+./scripts/check.sh
+./scripts/security.sh  # requires Gitleaks 8.30.1
+```
+
+The software checks cover the real server/Link with simulated handhelds,
+replaceable speech over local HTTPS, multiple devices, two independent Links,
+busy/steering behavior, provider approvals, playback receipts, and reconnects.
+They include rejection of wrong-role credentials, untrusted certificates,
+oversized/malformed messages, and missing local control authentication.
+The security command scans all local Git history plus uncommitted source,
+audits dependency advisories, and tests its own device/Link credential rules.
+
+Record the commit, CI URL, commands, and outcomes in the release PR. Keep raw
+logs and any sensitive reproductions outside Git. A passing simulated run
+does not establish live-provider compatibility, public-network behavior, or
+physical-device behavior; record those separately when tested.
+
+## Publication gate
+
 Before the team makes it public:
 
 - Select and approve the source-code license. Add its exact license text and
@@ -12,7 +46,7 @@ Before the team makes it public:
 - Review the complete Git history with Gitleaks and review file contents for
   credentials, customer data, production configuration, and private references.
   Removing a secret from the latest commit does not remove it from history.
-- Run `./scripts/check.sh`, the clean-clone rehearsal, dependency audit, and CI
+- Run `./scripts/check.sh`, `./scripts/security.sh`, the clean-clone rehearsal, and CI
   without company credentials. Review any remaining advisory explicitly.
 - Verify README commands and internal links from a fresh clone. Keep supported
   software behavior and pending hardware work clearly distinguished.

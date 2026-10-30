@@ -28,7 +28,7 @@ Use Python 3.12 on macOS or Linux:
 git clone https://github.com/santasailab/walkie-one.git
 cd walkie-one
 python3.12 -m venv .venv
-.venv/bin/python -m pip install -r personal-server/requirements.txt
+.venv/bin/python -m pip install --require-hashes -r personal-server/requirements.txt
 .venv/bin/python personal-server/rehearse.py
 ```
 
@@ -84,6 +84,15 @@ All setup steps also have ordinary developer commands; an AI is optional.
 ./scripts/setup.sh
 ./scripts/check.sh
 ```
+
+The suite also exercises two independent Links on one computer and a local
+HTTPS speech service with a temporary certificate. It checks routing, steering,
+permissions, reconnects, malformed input, and rejection of untrusted TLS.
+All assistants and speech responses in these tests are fixtures.
+
+Run `./scripts/security.sh` with Gitleaks 8.30.1 installed to audit dependencies
+and scan the Git history and current source. CI runs these checks automatically.
+Generated profiles and credentials must stay outside the repository.
 
 The team maintains the official edition. Forks will be the normal customization
 path once a license is selected and the source is published. Proposed upstream

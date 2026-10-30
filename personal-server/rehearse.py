@@ -81,10 +81,10 @@ async def message_of(ws, kind):
                     return message
 
 
-async def rehearsal(directory):
+async def rehearsal(directory, *, private_home=None, speech=None):
     state = directory / "state"
     config = initialize(state, "http://127.0.0.1:8787")
-    speech = RehearsalSpeech()
+    speech = speech if speech is not None else RehearsalSpeech()
     app = create_app(config, speech)
     # Real Link and custom adapter, with a harmless fixture executable.
     assistant = directory / "assistant.py"
@@ -94,8 +94,9 @@ async def rehearsal(directory):
     command = directory / "command.json"
     private_json(command, {"unused": True})
     command.write_text(json.dumps([sys.executable, str(assistant)]))
-    private_home = directory / "home"
-    private_home.mkdir()
+    if private_home is None:
+        private_home = directory / "home"
+        private_home.mkdir()
     async with running_server(app) as port:
         profile = state / "link.json"
         private_json(
@@ -156,7 +157,8 @@ async def rehearsal(directory):
                             elif json.loads(frame).get("type") == "audio.end":
                                 break
                     assert bytes(received) == load_fallback_error_audio()
-                    assert speech.heard == [pcm] and "Ready." in speech.spoken
+                    if isinstance(speech, RehearsalSpeech):
+                        assert speech.heard == [pcm] and "Ready." in speech.spoken
                     await device.send(control("ack", id=start["id"]))
                     empty = await message_of(device, "digest")
                     while empty["missed"]:
@@ -179,7 +181,11 @@ async def rehearsal(directory):
 
 
 def main():
-    with tempfile.TemporaryDirectory(prefix="walkie-personal-") as directory:
+    # macOS limits Unix socket paths to 104 bytes; its default temp path can be
+    # too long once the isolated home and per-server socket name are appended.
+    with tempfile.TemporaryDirectory(
+        prefix="walkie-personal-", dir="/tmp"
+    ) as directory:
         asyncio.run(rehearsal(Path(directory)))
 
 

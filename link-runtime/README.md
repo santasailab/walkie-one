@@ -26,10 +26,16 @@ directory for each server URL under `~/.relay/servers/`. A server switch therefo
 does not replay another server's background work. Provider-owned history and
 files created by the assistant remain separate.
 
+Each server also gets its own private control socket under `~/.relay/ipc/`.
+Two standalone Links can run beside the consumer Mac app without replacing its
+socket. Run only one Link for a given server profile.
+
 Use the standalone launcher, rather than running `link.py` directly: it validates
 the profile, sets local state, and protects the loopback control listener. The
 listener uses an ephemeral port and a fresh unprinted token. No inbound Internet
 port is needed on the assistant computer.
+If the runtime is started directly without a local token, HTTP status and
+assistant-control requests are rejected.
 
 ## Behavior retained from the maintained runtime
 

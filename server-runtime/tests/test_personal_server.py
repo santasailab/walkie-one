@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 import websockets
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).parents[2]
@@ -260,6 +261,90 @@ def test_real_link_without_external_dns_or_database(tmp_path, monkeypatch):
         asyncio.run(rehearsal(Path(directory)))
 
 
+def test_two_real_links_share_a_computer_without_replacing_its_native_socket():
+    sys.path.insert(0, str(ROOT / "link-runtime"))
+    from proactive import LocalSendReceipt, LocalSendServer
+
+    async def exercise(directory):
+        home = directory / "home"
+        home.mkdir()
+        first, second = directory / "first", directory / "second"
+        first.mkdir()
+        second.mkdir()
+        native_socket = home / ".relay" / "ipc" / "send.sock"
+
+        async def native_send(_request):
+            return LocalSendReceipt.rejected("cloud_unavailable")
+
+        async with LocalSendServer(native_socket, native_send):
+            inode = native_socket.stat().st_ino
+            await asyncio.gather(
+                rehearsal(first, private_home=home),
+                rehearsal(second, private_home=home),
+            )
+            assert native_socket.stat().st_ino == inode
+            reader, writer = await asyncio.open_unix_connection(native_socket)
+            writer.close()
+            await writer.wait_closed()
+
+    with tempfile.TemporaryDirectory(prefix="walkie-links-", dir="/tmp") as directory:
+        asyncio.run(exercise(Path(directory)))
+
+
+def test_real_link_and_https_speech_contract_without_provider_credentials(tmp_path):
+    import urllib.request
+
+    from fastapi import FastAPI, Response
+    from speech import (
+        HTTPSpeechAdapter,
+        SpeechError,
+        _NoSpeechRedirect,
+        load_fallback_error_audio,
+    )
+    from tls_fixture import tls_contexts
+
+    _, trusted = tls_contexts(tmp_path)
+    token = secrets.token_urlsafe(32)
+    heard, spoken = [], []
+    speech_app = FastAPI()
+
+    @speech_app.post("/v1/transcribe")
+    async def transcribe(request: Request):
+        assert request.headers["Authorization"] == "Bearer " + token
+        heard.append(await request.body())
+        return {"text": "Say ready."}
+
+    @speech_app.post("/v1/synthesize")
+    async def synthesize(request: Request):
+        assert request.headers["Authorization"] == "Bearer " + token
+        spoken.append(await request.json())
+        return Response(load_fallback_error_audio(), media_type="audio/mpeg")
+
+    async def exercise(directory):
+        async with running_server(
+            speech_app,
+            ssl_certfile=str(tmp_path / "relay-cert.pem"),
+            ssl_keyfile=str(tmp_path / "relay-key.pem"),
+        ) as port:
+            url = f"https://localhost:{port}/v1"
+            # The default client must reject this test-only certificate.
+            with pytest.raises(SpeechError):
+                await asyncio.to_thread(
+                    HTTPSpeechAdapter(url, token).transcribe, b"\0\0"
+                )
+            opener = urllib.request.build_opener(
+                urllib.request.HTTPSHandler(context=trusted), _NoSpeechRedirect()
+            ).open
+            await rehearsal(
+                directory, speech=HTTPSpeechAdapter(url, token, opener=opener)
+            )
+        assert heard == [b"\0\0" * 2400]
+        assert spoken == [{"text": "Ready.", "voice": None}]
+
+    with tempfile.TemporaryDirectory(prefix="walkie-https-", dir="/tmp") as directory:
+        asyncio.run(exercise(Path(directory)))
+
+
 def test_cli_add_remove_and_refuse_missing_speech(tmp_path):
     state = tmp_path / "private"
     initialize(state, "https://example.org")
@@ -497,6 +582,35 @@ def test_same_device_steers_current_turn_and_another_device_stays_busy(tmp_path)
                 assert next_turn["id"] != turn["id"]
                 await reply(link, "walkie-1", next_turn)
                 await message_of(first, "audio.end")
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("role", ["device", "link"])
+@pytest.mark.parametrize(
+    "payload", ['{"v":true,"type":"hello"}', "[" * 2000 + "]" * 2000]
+)
+def test_malformed_protocol_closes_only_the_offending_socket(tmp_path, role, payload):
+    config = configuration(tmp_path)
+    app = create_app(config, RehearsalSpeech())
+
+    async def exercise():
+        credential = (
+            config["devices"]["walkie-1"]
+            if role == "device"
+            else config["link_credential"]
+        )
+        async with running_server(app) as port:
+            async with await dial(port, role, credential) as peer:
+                await peer.send(payload)
+                with pytest.raises(websockets.ConnectionClosedError) as closed:
+                    while True:
+                        await asyncio.wait_for(peer.recv(), 3)
+                assert closed.value.rcvd.code == 4400
+            async with await dial(
+                port, "device", config["devices"]["walkie-2"]
+            ) as healthy:
+                assert (await message_of(healthy, "presence"))["cloud"] is True
 
     asyncio.run(exercise())
 

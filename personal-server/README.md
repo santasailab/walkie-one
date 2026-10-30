@@ -24,7 +24,7 @@ an older `python3`):
 
 ```sh
 python3.12 -m venv .venv
-.venv/bin/python -m pip install -r personal-server/requirements.txt
+.venv/bin/python -m pip install --require-hashes -r personal-server/requirements.txt
 .venv/bin/python personal-server/rehearse.py
 ```
 
@@ -34,6 +34,12 @@ audio, and acknowledges playback. It stops its processes and removes its
 temporary files afterward. It uses no accounts, paid providers or external
 hosting. The generated sound is a fixed test asset; it is not a real TTS result.
 This is a plumbing test, not a cellular, assistant-provider or microphone test.
+
+For the complete software test, run `./scripts/setup.sh` and `./scripts/check.sh`.
+This includes two simultaneous standalone Links, two handheld identities,
+an HTTPS speech fixture, credential rejection, and failure/reconnect scenarios.
+It uses temporary private state and cleans up its processes. Tests do not need
+your existing Mac app, assistant accounts, or speech keys.
 
 ## Set up your real server
 

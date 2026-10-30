@@ -121,7 +121,8 @@ def test_sigterm_unwinds_real_serve_and_kills_provider_task_and_alert_groups():
         )
         env = dict(
             os.environ,
-            RELAY_HOME=str(root / "relay"),
+            WALKIEONE_STATE_DIRECTORY=str(root / "relay"),
+            WALKIEONE_WORKSPACE=str(root / "relay" / "agent"),
             WALKIEONE_TASKS=str(task_dir),
             WALKIEONE_OUTBOX=str(root / "outbox"),
             WALKIEONE_SEND_SOCKET=str(root / "send.sock"),

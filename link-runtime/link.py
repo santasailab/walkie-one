@@ -168,9 +168,9 @@ def turn_gate():
 
 
 def authorized(token):
-    """Constant-time loopback status authentication. Empty remains dev-only."""
-    return not AUTH or (
-        token is not None and secrets.compare_digest(token, AUTH)
+    """A missing configured token must never authorize local assistant access."""
+    return bool(AUTH) and (
+        isinstance(token, str) and token.isascii() and secrets.compare_digest(token, AUTH)
     )
 
 
