@@ -5,7 +5,7 @@ Read README.md, then the guide for the component you are changing.
 - Server setup or configuration: personal-server/README.md.
 - Helping a first-time user: follow personal-server/README.md's first-time setup,
   including download approval, human-only secret entry and separate check results.
-  The single copy/paste setup prompt lives in README.md; link to it rather than
+  The single copy/paste setup prompt lives in docs/ai-setup.md; link to it rather than
   maintaining another version.
 - Transport, routing, or audio formats: personal-server/PROTOCOL.md and schema/events.json.
 - Assistant or speech adapters: docs/extending.md and link-runtime/README.md.
