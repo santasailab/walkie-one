@@ -10,7 +10,8 @@ Read README.md, then the guide for the component you are changing.
 - Transport, routing, or audio formats: personal-server/PROTOCOL.md and schema/events.json.
 - Assistant or speech adapters: docs/extending.md and link-runtime/README.md.
 - Board, provisioning, reset, or recovery: firmware/README.md.
-- Publication or dependency changes: docs/releasing.md and THIRD_PARTY_NOTICES.md.
+- Publication, licensing or dependency changes: docs/releasing.md, LICENSE,
+  NOTICE.md and THIRD_PARTY_NOTICES.md.
 
 Update the existing owning guide with behavior changes. Add a new document only
 when it has a distinct reader and purpose; keep the root README as the index.
@@ -24,6 +25,9 @@ at the affected boundary, especially authentication, device routing, steering,
 approvals, cancellation, and duplicate delivery. Retain provider approval controls.
 Public checks must run without company credentials or infrastructure.
 
-Licensing is pending. Keep this repository private. Publishing source or packages,
-deploying services, or changing repository access needs explicit maintainer
-authorization. No deployment workflow belongs in the initial source distribution.
+The original material identified in NOTICE.md uses the Walkie One Open Community
+License v0.2. Describe it as source available; preserve third-party terms.
+Keep repository visibility unchanged during release preparation. Publishing source
+or packages, deploying services, or changing repository access needs explicit
+maintainer authorization. No deployment workflow belongs in the initial source
+distribution.

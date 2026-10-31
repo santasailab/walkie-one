@@ -61,3 +61,5 @@ questions; full steering and provider approvals need an `AgentEndpoint` adapter.
 
 Run `.venv/bin/python -m pytest link-runtime/tests` for runtime checks, and
 `.venv/bin/python personal-server/rehearse.py` for the real server/Link rehearsal.
+The optional `.venv/bin/python link-runtime/agent.py --demo` self-check uses
+private temporary state and preserves your existing workspace and speech history.

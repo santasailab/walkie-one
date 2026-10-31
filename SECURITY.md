@@ -5,14 +5,16 @@ branch receives fixes; hardware and Internet deployment still need qualification
 
 ## Report a vulnerability
 
-While the repository is private, contact a repository administrator through the
-team's private channel. Share a minimal reproduction and affected commit without
-live keys, recordings, transcripts, or customer information. Keep sensitive
-findings out of issues and pull requests.
+Email [contact@walkieone.com](mailto:contact@walkieone.com) with the subject
+**Walkie One security report**. The Santa’s AI Lab maintainers handle reports for
+this repository. Include the affected commit, impact and a minimal reproduction
+using generated test values. Keep live keys, recordings, transcripts and customer
+information out of the report, public issues and pull requests.
 
-Before public release, maintainers must enable and test GitHub private
-vulnerability reporting and name the responsible team. Do not assume a public
-reporting channel exists until it has been verified.
+After publication, GitHub's **Report a vulnerability** option may also be used
+when enabled under Security → Advisories. Email remains the fallback when that
+option is unavailable. Maintainers should confirm receipt privately, reproduce
+the issue, coordinate a fix and agree on disclosure with the reporter.
 
 ## Trust boundaries
 
@@ -57,5 +59,8 @@ Runtime and test dependencies have exact versions and verified download hashes.
 
 CI scans source/history for secrets, checks dependency advisories, and exercises
 authentication, malformed input, device routing, TLS, steering, approvals, and
-reconnect behavior with generated fixtures. These checks reduce risk; they are
-not a claim that all vulnerabilities or hardware faults have been ruled out.
+reconnect behavior with generated fixtures. The same checks run weekly on the
+default branch so new dependency advisories can be caught between code changes.
+Maintainers must monitor failed runs and update affected locks and notices.
+These checks reduce risk; they are not a claim that all vulnerabilities or
+hardware faults have been ruled out.

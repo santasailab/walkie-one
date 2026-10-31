@@ -1,0 +1,93 @@
+# Walkie One Open Community License
+
+Version 0.2 · 31 October 2026
+
+The Covered Material for this repository is expressly identified in NOTICE.md.
+
+## 1. Parties, material and scope
+
+“Licensor” means Santa’s AI Lab Inc. “You” means the individual or legal entity exercising rights under this license. If acting for an entity, you must have authority to bind it.
+
+“Covered Material” means only files or other material the Licensor expressly identifies as governed by this license in an accompanying release manifest or file notice, including any identified CAD, PCB design, fabrication files, firmware, software, build scripts and documentation. “Modified Material” means your modifications or adaptations of Covered Material. Identifying a file does not grant rights in third-party content that the Licensor cannot license.
+
+Your “Group” includes you and entities controlling, controlled by, or under common control with you. Control means ownership of more than half the voting interests or the practical power to direct management. Employees and contractors acting solely for a Group do not receive additional sales allowances for that work.
+
+Covered Material excludes third-party material identified under separate terms, trademarks and branding except for Section 5, customer data, credentials, and access to hosted services. No rights in excluded material are implied.
+
+## 2. Permission
+
+Subject to these terms, the Licensor grants you a worldwide, nonexclusive, royalty-free license under its copyright and design rights in Covered Material to study, use, copy, modify, display, perform and distribute it, including in source, object, fabrication or other converted form, and to make, have made, use, import, distribute and sell products based on it within Section 3.
+
+The grant includes patent claims the Licensor owns or has authority to license without third-party payment, but only to the extent necessarily practiced by the unmodified Covered Material or its implementation as expressly described in the release. It does not cover claims implicated only by your additions or combinations. The grant makes no representation that patents exist or that third-party rights are cleared.
+
+You may keep modifications private. This license does not require publication of your source or assignment of your modifications. If you distribute, Section 4 applies. Each recipient receives permission for Covered Material directly from the Licensor on these terms; you may not sublicense or waive the Licensor’s sales condition. You may separately license your own original additions if doing so does not purport to remove these terms from Covered Material.
+
+The permission lasts for the applicable rights’ duration unless terminated under Section 8. New license versions do not change rights already granted for a release under this version. Rights under an independently obtained license remain governed by that license.
+
+## 3. Commercial hardware sales allowance
+
+### 3.1 Covered Units
+
+A “Covered Unit” is a physical product incorporating Covered Material, implementing a hardware design included in Covered Material, or incorporating Modified Material, in one of these forms: (a) a complete or substantially complete electronic device; (b) an electronics kit intended to produce one such device; or (c) a main-board printed circuit board assembly intended to form the functional core of one such device. An unpopulated main board sold with the parts intended to complete it is a kit.
+
+One kit intended to build multiple devices counts as that number of units. Combining a main-board assembly and its kit or enclosure into one device does not multiply the count for the same Group. Splitting a complete device or kit into coordinated shipments or transactions does not avoid counting it. Cases, buttons, passive accessories, bare boards supplied without a coordinated kit, and ordinary replacement parts are not Covered Units on their own.
+
+A general-purpose computer is not a Covered Unit solely because it runs the software. A factual reference to Walkie One, a quotation from its documentation, or interoperability with Walkie One does not by itself make an independently designed product a Covered Unit.
+
+### 3.2 What counts as a sale
+
+Your Group may sell up to **100 Covered Units in total** under this license. Count worldwide sales across all Covered Material releases and all product names, modifications, channels and controlled affiliates. The allowance is cumulative, not annual.
+
+A sale is a transfer for money or other commercial consideration, including a paid bundle or hardware supplied in exchange for a subscription commitment. Reserve a unit against the allowance when you accept a binding order, preorder or paid crowdfunding commitment for that unit, or transfer it if earlier. A cancelled order with a full refund before delivery releases its reserved count. A return after delivery does not erase the unit’s count; resale of that same unit does not add a second count. A no-charge, one-for-one repair or warranty replacement that replaces a withdrawn unit does not consume another allowance.
+
+Personal builds, genuinely free gifts, research and internal use without sale do not count. Software downloads and distributions alone are not Covered Units. Pure software sales, hosting without hardware supply, and rental without sale are outside this sales allowance. These exclusions do not grant hosted-service, trademark or third-party rights.
+
+Units made for your Group by a contractor count toward your Group when sold by or for it. A contractor working solely to your documented order may rely on your remaining allowance for that work and must not distribute those units independently. Ordinary resale of lawfully supplied, authorized units does not consume a new allowance and does not create an allowance for newly manufactured units. Applicable exhaustion and first-sale rights are preserved.
+
+A renamed product, new release, affiliate, intermediary or artificial division of one business does not reset its count. On a transfer of the relevant business to a successor, its used allowance follows that business; a transaction does not create a fresh allowance for its continuing sales. Keep reasonable aggregate records sufficient to establish the number of units and authorized resales. This license does not require telemetry, customer-level reporting, access to your systems or routine audits.
+
+### 3.3 Permission beyond 100
+
+Before accepting a sale that would bring your Group above 100 Covered Units, obtain a **separate written commercial license signed by an authorized representative of the Licensor**. A request, silence, quotation, verbal discussion, or payment for an ordinary product is not permission. Requests may be sent to contact@walkieone.com.
+
+Until that agreement is effective, this license grants no rights to make the excess sales. The Licensor may approve or decline a request and may propose separate terms. There is no automatic fee, royalty schedule or right to approval. Reaching 100 lawful sales does not revoke permission for personal use, research, internal use, modifications or distribution of files permitted elsewhere in this license. It creates no retroactive payment obligation for earlier compliant sales. Manufacturing inventory does not itself reserve permission to sell beyond the allowance.
+
+## 4. Distribution and notices
+
+When distributing Covered Material or Modified Material, include this license and relevant copyright, patent, attribution and third-party notices. Identify that you made modifications, where applicable, without suggesting they came from the Licensor. Preserve notices for the material you use; unrelated notices need not be reproduced.
+
+For a distributed Covered Unit, provide these notices in accompanying documentation, on an accessible device information screen, or through a durable link printed in its accompanying documentation. Identify yourself as the maker or seller and use a factual attribution such as “Based on the Walkie One design.” No logo or exterior imprint is required.
+
+You must not represent that you grant unrestricted rights to the original Covered Material or that downstream manufacturers are exempt from Section 3. Recipients may rely on this license for their own permitted uses. Third-party components remain under their own terms; this license does not add restrictions to rights those terms grant. If combining materials would create incompatible obligations, do not distribute the combination without resolving them.
+
+## 5. Brands and independence
+
+No trademark, trade-name, logo, trade-dress or endorsement license is granted. You may make truthful, customary references needed to identify origin or compatibility, subject to applicable law, and the factual attribution in Section 4. Do not market an independently made product as an official Walkie One or suggest that the Licensor makes, warrants, certifies or endorses it. Your own product name and branding must distinguish its source. These terms do not restrict truthful resale of genuine goods or other lawful uses of marks.
+
+## 6. Independent operation and compliance
+
+You are responsible for evaluating and validating products you make or modify and for laws applicable to your activities, including radio, electrical, battery, product-safety and consumer obligations. Publication of material is not certification, physical validation or permission to use a network or third-party service. Supplied limitations, prototype notices and safety instructions remain relevant.
+
+This license includes no account, cellular plan, cloud hosting, API credit, signing key, factory provisioning or support entitlement. Any access to such services requires its own agreement. It does not change separate warranties for genuine products you purchase, or rights that cannot lawfully be excluded. Website service terms do not reduce the rights expressly granted here for Covered Material. Exercising those rights does not require an account, a purchase or acceptance of separate website or service terms. Suspending or closing an account, ending a service or changing its terms does not by itself amend or terminate this license; Section 8 governs termination.
+
+## 7. Warranty and liability
+
+To the extent permitted by applicable law, Covered Material is provided as available, without any express or implied warranty of accuracy, completeness, fitness for a purpose, merchantability, title or noninfringement. You bear responsibility for deciding whether it is suitable for your intended use. The Licensor makes no commitment to update it or to supply a complete working device or service.
+
+To the extent permitted by applicable law, the Licensor and contributors are not liable under this license for loss of profit, revenue, business, data or use, or for indirect, special, incidental or consequential loss arising from Covered Material. Nothing excludes fraud, intentional misconduct, liability for death or personal injury where exclusion is prohibited, mandatory product liability or other non-excludable rights. Separately agreed product warranties remain governed by their terms and applicable law.
+
+## 8. Breach and termination
+
+If you breach these conditions, the permissions granted to you for the affected Covered Material terminate while the breach continues. The Licensor may reinstate them in writing. For a first breach that is capable of cure, permissions reinstate automatically if you fully cure within 30 days of discovering it or receiving notice, whichever is earlier, unless the Licensor has already notified you of a prior breach of this license. Completed excess sales cannot be retroactively authorized merely by stopping sales; resolution requires the Licensor’s written agreement. This section does not predetermine damages or create automatic penalties.
+
+Termination does not terminate grants to recipients who independently comply, or alter ownership of lawfully acquired physical goods. Sections defining scope, exclusions, notices, liability and dispute rules survive as necessary. Mandatory statutory rights and separately obtained licenses remain unaffected.
+
+## 9. General terms
+
+This agreement applies only to acts requiring permission under the Licensor’s relevant rights or enforceable obligations you undertake by accepting it. It does not restrict independent creation, public-domain material, fair use, exhaustion or other rights available without this license. Exercising an exclusive right granted here after notice of these terms indicates acceptance to the extent applicable law permits; mere receipt or viewing of a file does not waive statutory rights.
+
+California law governs, excluding conflict-of-law rules, subject to mandatory protections where you reside. Courts in Los Angeles County, California are the agreed forum except where mandatory law requires otherwise. There is no mandatory arbitration or class-action waiver in this license. If a provision cannot be enforced, the remaining provisions continue to the extent permitted by law.
+
+General website or service terms accepted for a separate account, purchase or service do not incorporate an arbitration requirement or class-action waiver into disputes concerning the formation, validity, interpretation, scope, performance, termination or enforcement of this license. Those disputes follow this Section 9. This paragraph does not determine the forum for separate purchase or hosted-service claims.
+
+This license and any separate written license between you and the Licensor govern the permissions they address. Waivers or permission to exceed Section 3 must be express and in writing from the Licensor. Contact: Santa’s AI Lab Inc., contact@walkieone.com.

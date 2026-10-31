@@ -19,6 +19,36 @@ from fake_agent_endpoint import DeterministicAgentEndpoint
 CODEX_FIXTURE = Path(__file__).parent / "fixtures" / "fake_codex.py"
 
 
+def test_agent_demo_preserves_existing_user_state(tmp_path):
+    state = tmp_path / "existing-state"
+    workspace = state / "agent"
+    workspace.mkdir(parents=True)
+    personal = {
+        state / "recent": b"existing private conversation\n",
+        state / "recipes.meta.json": b'{"existing": true}\n',
+        workspace / "AGENTS.md": b"Existing workspace instructions.\n",
+        workspace / "CLAUDE.md": b"Existing assistant instructions.\n",
+    }
+    for path, body in personal.items():
+        path.write_bytes(body)
+    environment = dict(os.environ)
+    for name in ("WALKIEONE_MANAGED_AGENT", "WALKIEONE_AGENT_BIN", "RELAY_AGENT"):
+        environment.pop(name, None)
+    environment.update(
+        WALKIEONE_STATE_DIRECTORY=str(state),
+        WALKIEONE_WORKSPACE=str(workspace),
+    )
+    result = subprocess.run(
+        [sys.executable, str(LINK_RUNTIME / "agent.py"), "--demo"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert {p: p.read_bytes() for p in state.rglob("*") if p.is_file()} == personal
+    assert result.returncode == 0, result.stderr
+
+
 def test_managed_runtime_never_falls_back_to_personal_install(monkeypatch, tmp_path):
     personal = tmp_path / "personal" / "codex"
     personal.parent.mkdir()

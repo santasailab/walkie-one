@@ -1,7 +1,8 @@
 # Preparing the public release
 
-The repository is private. Completing software tests does not authorize changing
-its visibility, publishing packages, or releasing firmware.
+Prepare and review changes while the repository remains private. Its owner
+performs the visibility change separately. Completing software tests does not
+authorize changing visibility, publishing packages or releasing firmware.
 
 ## Software-only scope
 
@@ -11,6 +12,13 @@ Keep `firmware/README.md` as the integration checklist; do not add board images,
 provisioning claims, or flashing commands until those paths are verified.
 Keep the company backend, accounts, production configuration, and native app
 out of this distribution.
+
+Original material is covered by [LICENSE](../LICENSE), with explicit scope in
+[NOTICE.md](../NOTICE.md). The Walkie One Open Community License v0.2 includes
+a 100-unit hardware-sales allowance; use **source available** in release copy.
+Preserve the full license and notices in every source archive. This adoption
+does not change licenses on files distributed elsewhere, including website
+downloads. Confirm rights and update the notice before importing new material.
 
 ## Repeatable readiness checks
 
@@ -39,10 +47,11 @@ physical-device behavior; record those separately when tested.
 
 Before the team makes it public:
 
-- Select and approve the source-code license. Add its exact license text and
-  confirm company ownership/redistribution rights for every included source.
-- Finish the third-party inventory for the final source and any distributed
-  binaries. Preserve required notices and verify asset provenance.
+- Verify that LICENSE and NOTICE.md cover the exact source being published and
+  that new contributions have the written permissions described in CONTRIBUTING.md.
+- Verify the third-party inventory against the final lockfiles. Source archives
+  exclude installed packages; any future bundled binary needs the full relevant
+  third-party license texts and notices. Preserve the audio fixture's provenance.
 - Review the complete Git history with Gitleaks and review file contents for
   credentials, customer data, production configuration, and private references.
   Removing a secret from the latest commit does not remove it from history.
@@ -50,9 +59,12 @@ Before the team makes it public:
   without company credentials. Review any remaining advisory explicitly.
 - Verify README commands and internal links from a fresh clone. Keep supported
   software behavior and pending hardware work clearly distinguished.
-- Enable and test private vulnerability reporting; assign a security contact.
-  Check available secret scanning and push protection before making visibility
-  public. Keep branch protection and CI's read-only token permissions.
+- Confirm the contact in SECURITY.md is monitored. GitHub private vulnerability
+  reporting is a public-repository feature: enable and verify it when changing
+  visibility, retaining email as a fallback. Check available secret scanning,
+  push protection and dependency alerts at that point. Keep branch protection
+  and CI's read-only token permissions. Document settings that remain unavailable
+  while private; a passing local scan does not enable GitHub's protections.
 - Obtain explicit maintainer approval for public visibility. Review the public
   website wording and repository links as a separate website change.
 

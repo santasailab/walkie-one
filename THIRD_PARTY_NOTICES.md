@@ -1,9 +1,9 @@
 # Third-party notices
 
-The team-owned source license is pending. This file records the initial runtime
-dependency inventory; it does not grant a license to the project or replace a
-dependency's own license. The repository does not vendor these packages: pip
-installs their distributions, including their license files.
+Original project material identified in [NOTICE.md](NOTICE.md) is governed by
+the [Walkie One Open Community License v0.2](LICENSE). This inventory does not
+replace or restrict a dependency's own license. The repository does not vendor
+these packages: pip installs their distributions, including their license files.
 
 ## Runtime dependencies
 

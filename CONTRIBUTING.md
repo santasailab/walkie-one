@@ -1,13 +1,25 @@
 # Contributing
 
-The Walkie One team maintains the official edition. Forking will be the normal
-way to adapt it once the source is licensed and published. We may accept pull
+The Walkie One team maintains the official edition. You can adapt the material
+identified in [NOTICE.md](NOTICE.md) under [LICENSE](LICENSE). We may accept pull
 requests, but opening one does not guarantee inclusion, review time, or support.
 Discuss substantial upstream changes before investing in them.
 
-This repository is private while the team prepares the first release. Its
-license is pending; public contribution and redistribution terms will be set
-before publication.
+The Walkie One Open Community License is source available and includes a
+hardware-sales allowance. Read its terms before distributing files or products.
+Private modifications do not have to be published.
+
+## Contribution rights
+
+Identify the origin and applicable licenses of submitted material, including
+employer or co-owner rights. Preserve existing notices. A pull request does not
+transfer ownership or count as acceptance of a separate contributor agreement.
+Because the project also offers commercial hardware permission, maintainers must
+arrange a separate written contribution agreement with sufficient licensing
+rights before merging external source or documentation contributions. Keep the
+agreement and personal contact details in private records. Until that agreement
+is in place, maintainers may discuss a proposal but must not merge the contribution.
+Contact [contact@walkieone.com](mailto:contact@walkieone.com) to arrange it.
 
 ## Development
 
