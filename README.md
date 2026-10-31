@@ -74,6 +74,7 @@ setup works, these guides explain the parts and the connections between them.
 | Prepare for device integration | [Firmware checklist](firmware/README.md) |
 | Secure your setup or report a vulnerability | [Security](SECURITY.md) |
 | Change the code, run tests or propose a contribution | [Contributing](CONTRIBUTING.md) |
+| Understand community expectations | [Community conduct](CODE_OF_CONDUCT.md) |
 
 ## Current status
 

@@ -1,0 +1,3 @@
+# Keep two human repository administrators able to review each other's changes.
+# GitHub verifies that each owner has write access; this file also owns itself.
+* @amankumar1906 @ibakurov

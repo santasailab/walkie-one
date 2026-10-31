@@ -37,6 +37,11 @@ retain their own licenses. GitHub Actions are pinned to source revisions. Gitlea
 is pinned to a version and verified archive digest. Recheck notices before
 redistributing any tool or bundling the Python environment.
 
+Static analysis uses Bandit 1.9.4 (Apache-2.0), with PyYAML 6.0.3 (MIT),
+stevedore 5.9.1 (Apache-2.0), and the already locked Rich 15.0.0 (MIT). Their
+license identifiers were checked against the installed distribution metadata.
+They are installed from their published packages, not vendored here.
+
 Claude, Codex, speech services, and tunnel providers are separate installations or
 services. Their names describe compatibility; their binaries, credentials, and
 accounts are not included or licensed by this repository.

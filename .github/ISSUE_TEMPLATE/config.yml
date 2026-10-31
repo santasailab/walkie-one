@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/santasailab/walkie-one/security/policy
+    about: Follow SECURITY.md; keep exploit details and credentials out of public issues.
+  - name: Setup instructions and current hardware status
+    url: https://github.com/santasailab/walkie-one/blob/main/personal-server/README.md
+    about: Start with the simulated-device rehearsal and the documented setup checks.

@@ -6,6 +6,7 @@ command -v gitleaks >/dev/null || {
   exit 1
 }
 .venv/bin/python scripts/check-repository.py
+.venv/bin/bandit --severity-level medium personal-server/*.py server-runtime/*.py link-runtime/*.py scripts/*.py
 .venv/bin/pip-audit --strict --progress-spinner off -r requirements-dev.txt
 gitleaks git --config .gitleaks.toml --redact --no-banner --log-opts='--all' .
 
