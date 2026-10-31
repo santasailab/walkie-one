@@ -1,0 +1,39 @@
+name: Bug report
+description: Report a reproducible software problem using redacted examples.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Report vulnerabilities through SECURITY.md. Do not attach server.json,
+        client profiles, keys, transcripts or recordings containing private data.
+  - type: input
+    id: version
+    attributes:
+      label: Commit and environment
+      description: Include the commit, operating system and Python version.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps and expected result
+      description: Use generated test data and enough detail to reproduce the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include the relevant error after removing private data.
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: What did you test?
+      options:
+        - Simulated device and fixture assistant
+        - Live speech or assistant provider
+        - Public network or physical device
+    validations:
+      required: true

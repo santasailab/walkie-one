@@ -1,0 +1,17 @@
+name: Improvement proposal
+description: Discuss a change before implementing it.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe who is affected and a concrete example.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior and alternatives
+      description: Explain the change, compatibility impact and how it could be verified.
+    validations:
+      required: true

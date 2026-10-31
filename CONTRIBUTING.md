@@ -4,6 +4,7 @@ The Walkie One team maintains the official edition. You can adapt the material
 identified in [NOTICE.md](NOTICE.md) under [LICENSE](LICENSE). We may accept pull
 requests, but opening one does not guarantee inclusion, review time, or support.
 Discuss substantial upstream changes before investing in them.
+Follow the [community conduct](CODE_OF_CONDUCT.md) guidelines in project discussions.
 
 The Walkie One Open Community License is source available and includes a
 hardware-sales allowance. Read its terms before distributing files or products.
@@ -29,6 +30,10 @@ fixture assistants, and loopback sockets. They do not need a company account.
 With Gitleaks 8.30.1 installed, also run `./scripts/security.sh` before pushing.
 CI checks the same commands. Never disable a security check to get a green run;
 investigate the finding and keep any sensitive reproduction outside Git.
+Security checks include Bandit static analysis, dependency advisories and secret
+scanning. Medium- and high-severity Bandit findings block the check. Explain any
+narrow false-positive suppression beside the relevant code; do not add a blanket
+baseline that hides new findings.
 
 To update dependencies, install `pip-tools` in your development environment,
 edit the owning `.in` file, and regenerate both locks:
@@ -42,8 +47,17 @@ edit the owning `.in` file, and regenerate both locks:
 
 Reinstall with `./scripts/setup.sh`, rerun both checks, and update the dependency
 inventory when versions or license notices change.
+Dependabot proposes weekly Python and pinned GitHub Actions updates, and security
+fixes when advisories are available. Review both Python locks together, regenerate
+them when necessary, and preserve hashes. These PRs require the same checks and
+maintainer approval as other changes; there is no automatic merge.
 
 Use a branch and pull request for changes after the initial repository import.
+`main` requires one independent approval from an owner in
+[CODEOWNERS](.github/CODEOWNERS), approval of the latest push, resolved review
+conversations and current passing CI. New commits dismiss stale approvals.
+These rules also apply to administrators; direct pushes, force pushes and branch
+deletion are blocked. Use squash merges to preserve the linear history.
 Keep each PR focused, include meaningful regression tests, and update the
 existing guide when behavior changes. Use a Conventional Commit title such as
 `fix(server): reject replies routed to another device`.

@@ -184,7 +184,8 @@ def main():
     # macOS limits Unix socket paths to 104 bytes; its default temp path can be
     # too long once the isolated home and per-server socket name are appended.
     with tempfile.TemporaryDirectory(
-        prefix="walkie-personal-", dir="/tmp"
+        prefix="walkie-personal-",
+        dir="/tmp",  # nosec B108: random mode-0700 directory; short Unix socket path
     ) as directory:
         asyncio.run(rehearsal(Path(directory)))
 

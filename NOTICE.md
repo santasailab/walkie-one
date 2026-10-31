@@ -12,7 +12,7 @@ License v0.2](LICENSE):
   their source, tests, fixtures, dependency declarations and lockfiles;
 - `scripts/`, `.github/`, `docs/` and the firmware checklist in `firmware/README.md`;
 - the root documentation and configuration files: `AGENTS.md`, `CONTRIBUTING.md`,
-  `README.md`, `SECURITY.md`, `THIRD_PARTY_NOTICES.md`, `NOTICE.md`, `LICENSE`,
+  `README.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `THIRD_PARTY_NOTICES.md`, `NOTICE.md`, `LICENSE`,
   `.gitignore`, `.gitleaks.toml`, `pytest.ini` and `ruff.toml`;
 - the root development dependency files `requirements-dev.in` and
   `requirements-dev.txt`.

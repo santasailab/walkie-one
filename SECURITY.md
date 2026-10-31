@@ -51,6 +51,9 @@ installed. It scans both committed history and the current non-ignored source,
 checks dependency advisories, and verifies that generated test credentials are
 actually detected. The custom Gitleaks rule covers device and Link tokens;
 default rules still cover common service credentials and private keys.
+Bandit also checks Python runtime and maintenance scripts for common unsafe
+patterns. Medium- and high-severity findings fail the security gate; only narrow,
+explained false-positive suppressions belong in source.
 
 The source check rejects generated profiles even after they are renamed, and
 rejects forced additions of private configuration and transcript files. CI uses
@@ -64,3 +67,9 @@ default branch so new dependency advisories can be caught between code changes.
 Maintainers must monitor failed runs and update affected locks and notices.
 These checks reduce risk; they are not a claim that all vulnerabilities or
 hardware faults have been ruled out.
+
+GitHub settings are separate from these source checks. Maintainers follow the
+[publication guide](docs/releasing.md) to verify required reviews, CI, Actions
+permissions, dependency alerts, and public-only scanning/reporting controls.
+Use a private, monitored maintainer account with strong authentication; a
+repository setting does not prove that every maintainer has secured their account.

@@ -36,7 +36,8 @@ busy/steering behavior, provider approvals, playback receipts, and reconnects.
 They include rejection of wrong-role credentials, untrusted certificates,
 oversized/malformed messages, and missing local control authentication.
 The security command scans all local Git history plus uncommitted source,
-audits dependency advisories, and tests its own device/Link credential rules.
+audits dependency advisories, runs Bandit static analysis, and tests its own
+device/Link credential rules.
 
 Record the commit, CI URL, commands, and outcomes in the release PR. Keep raw
 logs and any sensitive reproductions outside Git. A passing simulated run
@@ -67,6 +68,51 @@ Before the team makes it public:
   while private; a passing local scan does not enable GitHub's protections.
 - Obtain explicit maintainer approval for public visibility. Review the public
   website wording and repository links as a separate website change.
+
+## Repository protections
+
+Verify these controls in GitHub before making the repository public. Source files
+describe the policy; read back the live settings to establish that it is enforced.
+
+| Area | Required policy |
+| --- | --- |
+| `main` | Pull requests, one independent CODEOWNERS approval, latest-push approval, stale-review dismissal, resolved conversations, and up-to-date `Required checks` from GitHub Actions. Enforce for admins; block direct/force pushes and deletion; squash merges only. |
+| Actions | Read-only default token; Actions cannot approve PRs. Require full commit SHAs and allow only `actions/checkout` and `actions/setup-python`. Private fork runs are disabled and receive no write token or secrets. Use GitHub-hosted runners and review any new action before expanding the allowlist. |
+| Dependencies | Alerts and security-update PRs enabled, weekly version-update PRs for Python and Actions, and no automatic merging. Keep both Python locks and notices synchronized. |
+| Release tags | `v*` creation limited to repository admins; a separate no-bypass rule blocks updating or deleting those tags, including by admins. |
+| Releases | Immutability enabled for future releases. Assemble assets in a draft and publish only when complete. Correct a published release with a new version. |
+| Community | Valid CODEOWNERS with two eligible maintainers, license/notice, contribution and conduct guides, issue/PR templates, and a monitored private security contact. |
+
+Requiring signatures on every contributed commit is deferred until contributor
+and bot signing workflows are supported. Required reviews and CI remain enforced.
+Bandit is the static-analysis tool for this source-available release. CodeQL
+requires a separate licensing check before adoption. Research and the primary
+sources for these choices are in the
+[public-readiness note](research/2026-10-31-public-readiness.md).
+
+## Immediately after the owner changes visibility
+
+GitHub private vulnerability reporting and the public-fork approval policy are
+public-repository features. Free repository secret scanning and push protection
+must also be enabled and verified after publication. The email reporting route
+and local/CI secret scans remain available throughout preparation.
+
+As a repository administrator, with the GitHub CLI authenticated, run:
+
+```sh
+python3 scripts/finish-public-security.py --apply
+```
+
+The command refuses a private repository, never changes visibility, and enables
+only public secret scanning, push protection, private vulnerability reporting,
+and workflow approval for **all external contributors**. It reads the settings
+back and fails if any remain disabled. Run without `--apply` for verification
+only. It does not enable paid private-repository security products or CodeQL.
+
+Check that Security → Advisories offers **Report a vulnerability**, and that the
+maintainers receive security notifications. Recheck main/tag protection and
+Actions policy after the visibility transition. Resolve any failed setting
+before announcing the repository.
 
 Before a firmware release, also complete [the board checklist](../firmware/README.md).
 Store private signing keys outside Git/CI logs, publish verification material,
