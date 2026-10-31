@@ -91,9 +91,10 @@ git clone https://github.com/santasailab/walkie-one.git
 cd walkie-one
 ```
 
-While the repository is private, GitHub access is required. If cloning fails,
-sign in through your normal GitHub credential manager or request access from the
-maintainers. Never put a token in the clone URL or paste one into an AI chat.
+If the repository is still private during release preparation, GitHub access is
+required. If cloning fails, sign in through your normal GitHub credential manager
+or request access from the maintainers. Never put a token in the clone URL or
+paste one into an AI chat.
 Do not overwrite an existing checkout to make the clone work.
 
 ## Try it locally first

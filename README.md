@@ -11,6 +11,21 @@ server for your Walkie One. Run it on your Mac, a Mac Mini, or a hosted computer
 Use the maintained software to get started, then change the parts you want to
 make your own.
 
+## What is included
+
+| Component | What you get |
+| --- | --- |
+| Personal server | A small, self-hosted server for device connections, speech and assistant replies. It runs independently of our hosted service. |
+| Standalone Link | The core Link runtime used by our macOS app, adapted to run on its own with your server and assistant. The native Mac app is not included. |
+| Protocol, tests and guides | The device and Link interfaces, a simulated-device rehearsal, and instructions for changing your setup. |
+| Firmware | An integration checklist for now. Firmware source, board-specific installation and recovery are a separate release milestone. |
+
+Our hosted service uses a separate backend. This repository does not include its
+Azure deployment, account system, control plane or database-backed delivery.
+The personal server needs none of that infrastructure. It supports live
+conversations, but has no durable background notifications or managed firmware
+updates. Pending replies are lost when the server restarts.
+
 ## Get started
 
 **Set it up with your AI.** Give it our [setup prompt](docs/ai-setup.md).
@@ -66,6 +81,25 @@ The server and Link can be used with simulated devices today. Firmware, device
 provisioning and recovery still need hardware work; no installable firmware is
 included yet.
 
-This repository is private while we prepare the release. **Licensing is pending;
-no open-source license has been granted yet.** See [third-party notices](THIRD_PARTY_NOTICES.md)
-and the [publication checklist](docs/releasing.md) for release details.
+Software checks use simulated devices and assistants. They do not establish
+live-provider compatibility, cellular connectivity or physical-device readiness.
+See the [publication checklist](docs/releasing.md) for release requirements.
+
+## License
+
+The original material identified in [NOTICE.md](NOTICE.md) is available under
+the [Walkie One Open Community License v0.2](LICENSE). You can study, modify,
+share and use it, including for personal builds, subject to that license.
+
+The license permits up to **100 covered hardware units sold in total per maker
+or business group**, across releases and modified versions. Written commercial
+permission is required before sale 101. The allowance does not reset annually;
+binding preorders count. Software-only distribution, software sales and hosting
+without supplying hardware are outside that hardware-sales allowance. See the
+license for the complete definitions and conditions.
+
+This is **source available under a community license**, not an unrestricted
+OSI-approved open-source license. Third-party components keep their own
+[licenses and notices](THIRD_PARTY_NOTICES.md). The license provides no company
+cloud access, cellular service, provider account or branding rights.
+For commercial permission, contact [contact@walkieone.com](mailto:contact@walkieone.com).

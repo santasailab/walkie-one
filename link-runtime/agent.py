@@ -2637,6 +2637,27 @@ def turn_blocker_demo():
 
 
 def demo():
+    # A self-check must not read or rewrite the owner's workspace or history.
+    with tempfile.TemporaryDirectory(prefix="walkie-agent-demo-") as directory:
+        paths = {
+            "RELAY_HOME": directory,
+            "WORKDIR": os.path.join(directory, "agent"),
+            "TURN_DIR": os.path.join(directory, "turns"),
+            "TURN_LOCK": os.path.join(directory, "agent.lock"),
+            "RECENT": os.path.join(directory, "recent"),
+            "RECIPES": os.path.join(directory, "agent", "RECIPES.md"),
+            "CAPABILITIES": os.path.join(directory, "agent", "CAPABILITIES.md"),
+            "RECIPE_META": os.path.join(directory, "recipes.meta.json"),
+        }
+        original = {name: globals()[name] for name in paths}
+        try:
+            globals().update(paths)
+            _demo_checks()
+        finally:
+            globals().update(original)
+
+
+def _demo_checks():
     turn_blocker_demo()
 
     # The contract file must exist and land in the workdir under both names,
@@ -2644,7 +2665,7 @@ def demo():
     setup()
     for name in ("CLAUDE.md", "AGENTS.md"):
         body = open(os.path.join(WORKDIR, name), encoding="utf-8").read()
-        assert "Your answer is whatever you finish the turn with" in body, \
+        assert "Whatever you finish the turn with is spoken" in body, \
             f"{name} must tell the agent what counts as its answer"
         # Recipes must be INLINE. A pointer it has to go and read is a pointer
         # it can skip, and then it rediscovers chat.db every morning.
@@ -2908,8 +2929,8 @@ def demo():
 
     # Sessions: fresh while warm, dropped once cold, so a device left running
     # all day doesn't accumulate one endless conversation.
-    real_home, globals()["RELAY_HOME"] = RELAY_HOME, "/tmp/relay-demo-home"
-    os.makedirs(RELAY_HOME, exist_ok=True)
+    session_home = _tf.mkdtemp(prefix="walkie-demo-session-")
+    real_home, globals()["RELAY_HOME"] = RELAY_HOME, session_home
     # Pinned, not inherited. This block used to lean on the module default being
     # claude, so changing the default broke it - and it left BACKEND set to claude
     # afterwards, which would have hidden the new default from every check below.
@@ -2947,6 +2968,7 @@ def demo():
     finally:
         globals()["RELAY_HOME"] = real_home
         globals()["BACKEND"] = real_backend
+        _sh.rmtree(session_home)
 
     # The out-loud log, and the case it exists for: the device announces
     # something while nobody is mid-conversation, the person wanders off, and
