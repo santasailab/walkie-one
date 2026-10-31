@@ -39,7 +39,9 @@ def _run_client(
         check=False,
         env=environment,
         text=True,
-        timeout=5,
+        # The CLI permits 15 seconds for curl, then up to 10 seconds for the
+        # receipt in these tests. Also allow process startup on hosted macOS.
+        timeout=30,
     )
 
 
