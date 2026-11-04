@@ -100,12 +100,11 @@ int main() {
   all.asleep = true;
   assert(lit(all) == kOff);
 
-  // Charging blinks orange once every two seconds; charged is steady green.
+  // Charging stays orange across blink boundaries; charged is steady green.
   StatusInputs charging = ready;
   charging.battery = BatteryLight::Charging;
-  assert(statusLed(charging, 0) == kOff && statusLed(charging, 999) == kOff);
-  assert(statusLed(charging, 1000) == kOrange && statusLed(charging, 1999) == kOrange);
-  assert(statusLed(charging, 2000) == kOff && statusLed(charging, 3000) == kOrange);
+  for (uint32_t now : {0U, 999U, 1000U, 1999U, 2000U, 3000U, 30000U})
+    assert(statusLed(charging, now) == kOrange);
   assert(kOrange.red == 255 && kOrange.green > 0 && kOrange.green < 255);
   StatusInputs charged = ready;
   charged.battery = BatteryLight::Charged;
@@ -125,7 +124,7 @@ int main() {
     assert(statusLed(message, 0) == kWhite);
   }
   paired.battery = BatteryLight::Charging;
-  assert(statusLed(paired, 0) == kOff && statusLed(paired, 1000) == kOrange);
+  assert(statusLed(paired, 0) == kOrange && statusLed(paired, 1000) == kOrange);
   paired.battery = BatteryLight::Charged;
   assert(statusLed(paired, 0) == kGreen);
   charging.cloudConnected = false;
@@ -137,7 +136,7 @@ int main() {
   // Switched off: charging/full still show; no other status turns on the LED.
   StatusInputs off = all;
   off.battery = BatteryLight::Charging;
-  assert(statusLed(off, 0) == kOff && statusLed(off, 1000) == kOrange);
+  assert(statusLed(off, 0) == kOrange && statusLed(off, 1000) == kOrange);
   off.battery = BatteryLight::Charged;
   assert(lit(off) == kGreen && dark(off) == kGreen);
   off.battery = BatteryLight::None;

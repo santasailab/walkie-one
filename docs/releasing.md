@@ -75,15 +75,16 @@ describe the policy; read back the live settings to establish that it is enforce
 
 | Area | Required policy |
 | --- | --- |
-| `main` | Pull requests, one independent CODEOWNERS approval, latest-push approval, stale-review dismissal, resolved conversations, and up-to-date `Required checks` from GitHub Actions. Enforce for admins; block direct/force pushes and deletion; squash merges only. |
+| `main` | Only `@amankumar1906` can merge, through a pull request. A user-specific main-update ruleset permits no other actor. His account alone can bypass the independent-review requirement; CI, resolved conversations, linear history, and the direct/force-push and deletion bans still apply. Squash merges only. |
 | Actions | Read-only default token; Actions cannot approve PRs. Require full commit SHAs and allow only `actions/checkout` and `actions/setup-python`. Private fork runs are disabled and receive no write token or secrets. Use GitHub-hosted runners and review any new action before expanding the allowlist. |
 | Dependencies | Alerts and security-update PRs enabled, weekly version-update PRs for Python and Actions, and no automatic merging. Keep both Python locks and notices synchronized. |
 | Release tags | `v*` creation limited to repository admins; a separate no-bypass rule blocks updating or deleting those tags, including by admins. |
 | Releases | Immutability enabled for future releases. Assemble assets in a draft and publish only when complete. Correct a published release with a new version. |
-| Community | Valid CODEOWNERS with two eligible maintainers, license/notice, contribution and conduct guides, issue/PR templates, and a monitored private security contact. |
+| Community | CODEOWNERS names `@amankumar1906` as the sole official maintainer. Forks are independent and upstream PRs are optional. Preserve the license/notice, contribution and conduct guides, issue/PR templates, and monitored private security contact. |
 
 Requiring signatures on every contributed commit is deferred until contributor
-and bot signing workflows are supported. Required reviews and CI remain enforced.
+and bot signing workflows are supported. CI remains enforced for everyone;
+the sole-maintainer review exception is scoped to Aman's account.
 Bandit is the static-analysis tool for this source-available release. CodeQL
 requires a separate licensing check before adoption. Research and the primary
 sources for these choices are in the

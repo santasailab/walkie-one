@@ -120,7 +120,7 @@ int i2s_channel_read(Channel* c,void* data,size_t cap,size_t* bytes,int wait){
       pcm[2*i]=levels[rawSampleIndex++%7];
       pcm[2*i+1]=pcm[2*i];
     }
-    const int amplified=int(pcm[2*i+RELAY_PCB06_MIC_SLOT])*4;
+    const int amplified=int(pcm[2*i+RELAY_PCB06_MIC_SLOT])*8;
     if(inputFrames++>=expectedTrim)
       expectedPcm.push_back(amplified>32767 ? 32767 : amplified<-32768 ? -32768 : amplified);
   }
@@ -217,7 +217,7 @@ int main(int argc,char**argv){
     const size_t captured=micSamplesRead;assert(captured==70*256);
     {MicLock guard;assert(spool.durationMs(now)==700);}
     drain();assert(sentPcm.size()==captured-5280);
-    for(auto sample:sentPcm)assert(sample==4*(RELAY_PCB06_MIC_SLOT ? -2345 : 1234));
+    for(auto sample:sentPcm)assert(sample==8*(RELAY_PCB06_MIC_SLOT ? -2345 : 1234));
     assert(countEvent("talk.start")==1 && countEvent("talk.end")==1 && closes==0);
     assertCleared();
   }else if(mode=="failed-write" || mode=="failed-read" || mode=="dma-overflow" || mode=="failed-during-write" || mode=="overflow-release"){

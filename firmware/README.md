@@ -7,9 +7,11 @@ provisioning, signed-image verification and host tests. No credentials or
 precompiled device images are included.
 
 Talk records up to 60 seconds of 24 kHz mono PCM; the server returns a complete
-MP3 reply that plays when you press Listen. The application includes the current
-button sounds, microphone gain/crop, charging lights, battery reports, cellular
-startup and reconnect handling. Custom builds disable automatic updates.
+MP3 reply that plays when you press Listen. Version `0.9.9-pcb06` includes the current
+button sounds, 8x microphone gain and opening crop, steady orange charging
+light, battery reports, cellular startup and reconnect handling. The held
+Talk interval is silent, with the amplifier off; opening and closing cues
+remain audible. Custom builds disable automatic updates.
 
 This is a **source release**, not a new qualified hardware or binary release.
 The software checks and target build do not prove your board's wiring, SIM,
