@@ -1,0 +1,34 @@
+{
+  "ffmpeg_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers",
+  "filter": "aresample=24000:resampler=swr:filter_size=32:phase_shift=10:linear_interp=0:exact_rational=1:dither_method=none",
+  "dither": "none",
+  "normalization": "none",
+  "sample_rate": 24000,
+  "format": "mono PCM16 little-endian",
+  "assets": [
+    {
+      "symbol": "kPress",
+      "path": "pcm24k/01_squelch-gate_press.wav",
+      "frames": 5280,
+      "peak": 11876,
+      "wav_sha256": "ced263ebd70ef51e4d79f5fe057c656ce48e4a5d8f07127d4ba63402fa84c544",
+      "pcm_sha256": "6685b1e69b5dfebf1594f3162e3d79cabe777c94c6c1ada085a58d88d96111ab"
+    },
+    {
+      "symbol": "kRelease",
+      "path": "pcm24k/01_squelch-gate_release.wav",
+      "frames": 7920,
+      "peak": 9007,
+      "wav_sha256": "9d2b1b5fafb7bedebf5ac1666ba5b419e2c6aeb8f4a3de53872815e4450773df",
+      "pcm_sha256": "8ef37a745b5e7bc235bf296ff28c7c679fad7f9041a1f78fe31a085bdae08ca9"
+    },
+    {
+      "symbol": "kLoop",
+      "path": "pcm24k/01_squelch-gate_loop.wav",
+      "frames": 18323,
+      "peak": 2178,
+      "wav_sha256": "a4ba56354e662d900f4cf12e66812f5efb5fc1fd13ce5239c0727562f39d60c2",
+      "pcm_sha256": "d41bfd20f113d669e564716ef5b5cc41160e359cf047665d18583256dff0ff22"
+    }
+  ]
+}

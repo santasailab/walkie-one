@@ -1,0 +1,32 @@
+{
+  "family": "Squelch Gate",
+  "assets": [
+    {
+      "symbol": "kPress",
+      "original": "originals/01_squelch-gate_press.wav",
+      "sha256": "44d8ad637c48f22a382637026856752cccc3fb03999da06ef4b29124111ae87f",
+      "pcm_sha256": "00c9387d8dfb52f725ca8db83a4a44184821568f3ed502013d3481510ba8c73e",
+      "sample_rate": 44100,
+      "frames": 9702,
+      "peak": 11869
+    },
+    {
+      "symbol": "kRelease",
+      "original": "originals/01_squelch-gate_release.wav",
+      "sha256": "4b6cfbd0a7330b8d62cbac57ed71ffc59b58f017c4708370aa5676a3006ca321",
+      "pcm_sha256": "4c49d0b77fc502f2e186176834552fac2e7f2800daca89cb3ea6d9d89bc84af9",
+      "sample_rate": 44100,
+      "frames": 14552,
+      "peak": 9213
+    },
+    {
+      "symbol": "kLoop",
+      "original": "originals/01_squelch-gate_loop.wav",
+      "sha256": "5a11ffc57e562a7d2e9e0c867c4e8e084b2f5c7b6f9aa45ce7f56ce7d119ff58",
+      "pcm_sha256": "c55161a793f011c348b8065cbc9eea077d0defa9827043d65189f03d627f4adb",
+      "sample_rate": 44100,
+      "frames": 33668,
+      "peak": 2182
+    }
+  ]
+}

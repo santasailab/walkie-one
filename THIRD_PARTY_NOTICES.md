@@ -33,7 +33,9 @@ Both runtime and development lockfiles pin package versions and download hashes.
 
 `requirements-dev.txt` pins the test/audit tools and their transitive dependencies
 with hashes. These tools run during development/CI; their package distributions
-retain their own licenses. GitHub Actions are pinned to source revisions. Gitleaks
+retain their own licenses. Firmware tooling uses pyserial 3.5 (BSD-3-Clause) and esptool 5.6.0 (GPL-2.0-or-later), installed separately by pip; no esptool code or binary is vendored. Its resolved dependencies and hashes are in the development lock.
+
+GitHub Actions are pinned to source revisions. Gitleaks
 is pinned to a version and verified archive digest. Recheck notices before
 redistributing any tool or bundling the Python environment.
 
@@ -59,6 +61,27 @@ ffmpeg -f lavfi -i 'sine=frequency=440:duration=0.3:sample_rate=24000' \
   server-runtime/fallback-error.mp3
 ```
 
-No firmware vendor source, native application framework, private signing material,
-or company speech recording is included in this initial snapshot. Review those
-components separately if they are added later.
+## Firmware
+
+- `firmware/relay_client/src/audio/minimp3/minimp3.h` derives from
+  [lieff/minimp3](https://github.com/lieff/minimp3/tree/ea99364f61c14656440e8d77e9c233ccf3124633),
+  under [CC0-1.0](firmware/licenses/CC0-1.0.txt). The adaptation uses caller-owned
+  decoder scratch storage. Its upstream dedication remains in the header.
+- The legacy `muse_ble.c` helper derives from Meta's
+  [muse-gadget-sdk at 4268880](https://github.com/facebookincubator/muse-gadget-sdk/tree/4268880),
+  under [Apache-2.0](firmware/licenses/Apache-2.0.txt). It is adapted to this
+  project's BLE wrapper and is not compiled by the PCB06 build. Other Muse
+  pairing helpers implement protocol compatibility; no Muse app is distributed.
+- Arduino CLI, Arduino ESP32 core 3.3.11, ESP-IDF, mbedTLS and the USB modem
+  vendor component are not vendored. The PCB06 Arduino build does not require
+  the legacy USB-modem component. Installed tools retain their own licenses;
+  any future binary distribution needs a separate complete notice review.
+- `firmware/tests/decoder-tone.mp3` is a generated 440 Hz sine tone, not speech.
+  Reproduce with the command above, using duration `1.8` and this output path.
+- Button feedback WAVs and generated PCM arrays are original project assets.
+  Button clicks were generated with ElevenLabs Sound Effects v2 through fal.ai;
+  they contain no customer recordings. Only selected sounds and technical
+  hashes are distributed; private discussions and vendor request IDs are omitted.
+
+No native application framework, private signing material, private configuration,
+or customer recording is included in this source snapshot.

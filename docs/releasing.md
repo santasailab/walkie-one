@@ -1,17 +1,16 @@
 # Preparing the public release
 
-Prepare and review changes while the repository remains private. Its owner
-performs the visibility change separately. Completing software tests does not
-authorize changing visibility, publishing packages or releasing firmware.
+This repository is public. Prepare future changes on a branch, review the exact
+files and history being added, then publish through a pull request. A source
+update does not authorize deployment, a binary release or a visibility change.
 
-## Software-only scope
+## Source scope
 
-The first source release can contain the personal server, standalone Link,
-protocol, tests, and documentation while firmware remains a separate milestone.
-Keep `firmware/README.md` as the integration checklist; do not add board images,
-provisioning claims, or flashing commands until those paths are verified.
-Keep the company backend, accounts, production configuration, and native app
-out of this distribution.
+The release contains the personal server, standalone Link, shared protocol,
+PCB06 firmware source, build/provision/restore tools and host tests. Keep the
+company backend, accounts, deployments, factory records and native app out of
+this distribution. No public recovery bundle is included. See the
+[firmware guide](../firmware/README.md) for the precise hardware limitations.
 
 Original material is covered by [LICENSE](../LICENSE), with explicit scope in
 [NOTICE.md](../NOTICE.md). The Walkie One Open Community License v0.2 includes
@@ -46,7 +45,7 @@ physical-device behavior; record those separately when tested.
 
 ## Publication gate
 
-Before the team makes it public:
+Before publishing any update:
 
 - Verify that LICENSE and NOTICE.md cover the exact source being published and
   that new contributions have the written permissions described in CONTRIBUTING.md.
@@ -66,12 +65,12 @@ Before the team makes it public:
   push protection and dependency alerts at that point. Keep branch protection
   and CI's read-only token permissions. Document settings that remain unavailable
   while private; a passing local scan does not enable GitHub's protections.
-- Obtain explicit maintainer approval for public visibility. Review the public
-  website wording and repository links as a separate website change.
+- Review the public website wording, versioned source download, and repository
+  links alongside the source update. Do not link unavailable release artifacts.
 
 ## Repository protections
 
-Verify these controls in GitHub before making the repository public. Source files
+Verify these controls in GitHub when preparing a release. Source files
 describe the policy; read back the live settings to establish that it is enforced.
 
 | Area | Required policy |
@@ -90,12 +89,11 @@ requires a separate licensing check before adoption. Research and the primary
 sources for these choices are in the
 [public-readiness note](research/2026-10-31-public-readiness.md).
 
-## Immediately after the owner changes visibility
+## Verify the public security settings
 
-GitHub private vulnerability reporting and the public-fork approval policy are
-public-repository features. Free repository secret scanning and push protection
-must also be enabled and verified after publication. The email reporting route
-and local/CI secret scans remain available throughout preparation.
+GitHub private vulnerability reporting, public-fork approvals, secret scanning
+and push protection are separate repository settings. Verify them alongside
+the local and CI checks; the email reporting route remains the fallback.
 
 As a repository administrator, with the GitHub CLI authenticated, run:
 

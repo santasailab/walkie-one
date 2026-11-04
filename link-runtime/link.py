@@ -17,6 +17,8 @@ decoder, speech model, text-to-speech renderer, Messages watcher, or response
 backlog here.
 """
 
+from __future__ import annotations
+
 import asyncio
 import collections
 import contextvars
@@ -59,7 +61,7 @@ _proactive_rate_limit = SendRateLimit()
 
 _started = time.time()
 _cloud = {"state": "off", "error": None, "since": _started}
-_empty_device = {"battery_pct": None, "rssi": None, "fw": None, "at": None}
+_empty_device = {"battery_pct": None, "power_state": None, "rssi": None, "fw": None, "at": None}
 _activity = collections.deque(maxlen=64)
 
 _tasks = set()
@@ -201,8 +203,8 @@ def _response(status, body, content_type):
     )
 
 
-def _active_device():
-    pair = _route_pair.get()
+def _active_device(pair=None):
+    pair = pair or _route_pair.get()
     if pair is None:
         primaries = {
             mux.primary_pair
@@ -213,7 +215,13 @@ def _active_device():
             pair = next(iter(primaries))
         elif not primaries:
             pair = _last_primary_pair
-    return dict(_pair_devices.get(pair, _empty_device))
+    sample = dict(_pair_devices.get(pair, _empty_device))
+    at = sample.get("at")
+    if (not _pair_online or not _pair_online.get(pair) or at is None
+            or not 0 <= time.time() - at <= 1200):
+        sample["battery_pct"] = None
+        sample["power_state"] = None
+    return {**sample, "pair_id": pair}
 
 
 def _blocked_apps():
@@ -265,6 +273,8 @@ async def _status_snapshot(include_uptime=True):
         "cloud": dict(_cloud, url=bool(CLOUD_URL)),
         "hardware": _primary_online(),
         "device": _active_device(),
+        "devices": [{**_active_device(pair), "online": bool(online)}
+                    for pair, online in sorted((_pair_online or {}).items())],
         "agent": agent.status(),
         "activity": list(_activity),
         "needs_permission": sorted(_blocked_apps()),
@@ -316,7 +326,7 @@ async def process_request(_connection, request):
 
 
 async def send_proactive(
-    request: LocalSendRequest, *, rate_limited: bool = True
+    request: LocalSendRequest, *, rate_limited: bool = True, reply_pair: str | None = None
 ) -> LocalSendReceipt:
     """Send through exactly one connected Link without exposing its secret.
 
@@ -341,7 +351,10 @@ async def send_proactive(
             return LocalSendReceipt.rejected("answer_instead")
     if rate_limited and not _proactive_rate_limit.admit():
         return LocalSendReceipt.rejected("rate_limited")
-    receipt = await candidates[0].send_proactive(request)
+    if reply_pair is None:
+        receipt = await candidates[0].send_proactive(request)
+    else:
+        receipt = await candidates[0].send_proactive(request, reply_pair=reply_pair)
     if receipt.status == "queued":
         # A message sent while nobody is listening is the one most likely to be
         # missed, so it is readable here without waiting for playback.
@@ -422,8 +435,8 @@ class _LinkMultiplexer:
                 _spawn(self.raw.close(1011, "Link write interrupted"))
                 raise
 
-    async def send_proactive(self, request):
-        pair = self.primary_pair
+    async def send_proactive(self, request, *, reply_pair=None):
+        pair = reply_pair or self.primary_pair
         if pair is None:
             return LocalSendReceipt.rejected("link_disconnected")
         if len(self._proactive_waiters) >= MAX_PROACTIVE_INFLIGHT:
@@ -442,6 +455,7 @@ class _LinkMultiplexer:
                         "id": request_id,
                         "idempotency_key": request.idempotency_key,
                         "text": request.text,
+                        **({"reply_to_device": True} if reply_pair is not None and pair != self.primary_pair else {}),
                     },
                     separators=(",", ":"),
                 ),
@@ -603,7 +617,7 @@ class _LinkMultiplexer:
                         and valid_pair
                         and isinstance(route.get("online"), bool)
                     ):
-                        _set_pair_online(pair, route["online"])
+                        _set_pair_online(pair, route["online"], route.get("battery"))
                         continue
                     if (
                         not isinstance(route, dict)
@@ -657,11 +671,22 @@ class _LinkMultiplexer:
                 await asyncio.gather(*handlers, return_exceptions=True)
 
 
-def _set_pair_online(pair, online):
+def _power_state(value):
+    return value if value in ("charging", "plugged_in", "on_battery") else None
+
+
+def _set_pair_online(pair, online, battery=None):
     global _pair_online
     if _pair_online is None:
         _pair_online = {}
     _pair_online[pair] = online
+    _pair_devices.pop(pair, None)
+    if online and isinstance(battery, dict):
+        pct, age = battery.get("percent"), battery.get("age_s")
+        if (type(pct) is int and 0 <= pct <= 100
+                and type(age) in (int, float) and 0 <= age <= 1200):
+            _pair_devices[pair] = {**_empty_device, "battery_pct": pct, "at": time.time() - age,
+                                   "power_state": _power_state(battery.get("power_state"))}
     _notify()
 
 
@@ -669,6 +694,7 @@ def _clear_pair_online():
     """Presence is per relay connection; the next one pushes it again."""
     global _pair_online
     _pair_online = None
+    _pair_devices.clear()
     _notify()
 
 
@@ -1065,7 +1091,10 @@ async def handle(ws, outbound=False):
                 pair = _route_pair.get()
                 if pair is not None:
                     _pair_devices[pair] = {
-                        "battery_pct": message.get("battery_pct"),
+                        "battery_pct": (message.get("battery_pct")
+                            if type(message.get("battery_pct")) is int
+                            and 0 <= message["battery_pct"] <= 100 else None),
+                        "power_state": _power_state(message.get("power_state")),
                         "rssi": message.get("rssi"),
                         "fw": message.get("fw"),
                         "at": time.time(),
@@ -1278,7 +1307,7 @@ async def _local_agent_socket(ws):
                             text=answer,
                             idempotency_key=(
                                 "provider-interaction-" + interaction_id),
-                        ), rate_limited=False)
+                        ), rate_limited=False, reply_pair=origin_pair)
                         if delivered.status != "queued":
                             _note("failed", "Device delivery failed")
                     else:

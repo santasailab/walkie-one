@@ -60,7 +60,10 @@ def test_permission_after_approval_returns_mac_repair(host, error):
     interaction = pending(resume)
     outcome = agent.resolve_interaction(interaction.id, "allow")
     assert outcome.failure.code == "permission_blocked"
-    assert "Mac access" in outcome.failure.repair
+    expected = "Calendar" if isinstance(error, agent._PermissionBlocked) else "Mac access"
+    assert outcome.failure.repair == agent.turn_blockers.permission_repair(expected)
+    assert "System Settings" in outcome.text
+    assert "WalkieOne Settings" not in outcome.text
     assert not agent.busy()
     assert agent.pending_interaction() is None
 

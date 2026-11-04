@@ -11,7 +11,7 @@ this repository. Include the affected commit, impact and a minimal reproduction
 using generated test values. Keep live keys, recordings, transcripts and customer
 information out of the report, public issues and pull requests.
 
-After publication, GitHub's **Report a vulnerability** option may also be used
+GitHub's **Report a vulnerability** option may also be used
 when enabled under Security → Advisories. Email remains the fallback when that
 option is unavailable. Maintainers should confirm receipt privately, reproduce
 the issue, coordinate a fix and agree on disclosure with the reporter.
@@ -43,6 +43,19 @@ the issue, coordinate a fix and agree on disclosure with the reporter.
 - Transcripts are optional and private. Server delivery state is in memory;
   disconnects or restarts can lose replies. Never replay a command automatically
   when the assistant may already have acted.
+
+## Firmware boundary
+
+Custom PCB06 builds disable automatic updates. Provision the per-device token
+into NVS over USB; never embed it in source or an image. NVS and flash backups
+contain credentials and must remain private. This design does not protect NVS
+from a person with physical access to the board.
+
+The restore tool verifies image size, SHA-256 and an Ed25519 signature before
+writing only the application and OTA-selection regions. Downloads and redirects
+must use HTTPS. The public key is verification material, not a credential.
+No public recovery image or endpoint is part of this release. A source build
+is not proof that recovery, cellular or audio works on a particular board.
 
 ## Repository checks
 

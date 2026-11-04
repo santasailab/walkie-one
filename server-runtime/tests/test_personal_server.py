@@ -360,7 +360,7 @@ def test_cli_add_remove_and_refuse_missing_speech(tmp_path):
             ],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=15,  # Allow cold Python imports on hosted macOS runners.
             check=False,
         )
 

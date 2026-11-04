@@ -340,9 +340,7 @@ def _repair_for(code, permission_app=None):
     if code == "update_required":
         return f"Update {provider} in WalkieOne, then ask again."
     if code == "permission_blocked":
-        target = f" for {permission_app}" if permission_app else ""
-        return (f"On your Mac, open WalkieOne Settings > Mac access{target}. "
-                "Complete the macOS approval there, then ask again.")
+        return turn_blockers.permission_repair(permission_app)
     if code == "process_failed":
         return f"Open WalkieOne and restart {provider}, then try again."
     if code == "response_too_long":
@@ -2328,9 +2326,10 @@ def _permission_outcome(error):
         blocked = turn_blockers.permission_app(detail)
     if not blocked:
         return None
+    blocked = turn_blockers.permission_name(blocked)
     turn_blockers.record(blocked)
     return AgentTurnOutcome(
-        turn_blockers.PERMISSION_REPLY,
+        turn_blockers.permission_reply(blocked),
         _failure("permission_blocked", detail, permission_app=blocked),
     )
 

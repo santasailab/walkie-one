@@ -7,8 +7,7 @@ for this first stage.
 
 The AI will explain downloads and ask for approval before installing software
 or making your server public. You handle account sign-ins, billing and private
-key entry directly. While this repository is private, your GitHub account needs
-access to clone it.
+key entry directly. The repository is public; cloning it needs no company credentials.
 
 ## Copy this prompt
 
@@ -25,8 +24,7 @@ Leave all hardware, firmware and flashing for later.
    Python, run blanket upgrades, or bypass permissions. If you cannot run
    commands, guide me through one command at a time and wait for the result.
 2. Clone the source into a new folder, then read AGENTS.md and the setup guide.
-   If private-repository access fails, help me sign in directly or get access;
-   never ask for a password/token in chat. Create the isolated .venv, install
+   Never ask for a password or token in chat. Create the isolated .venv, install
    the hash-pinned runtime requirements and run rehearse.py. Continue only
    when it passes. Keep the maintained server, Link and edge-case handling.
 3. Guide me through choosing speech services. Default to the supported

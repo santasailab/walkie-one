@@ -5,6 +5,7 @@ import collections
 import json
 import os
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -16,6 +17,19 @@ import link
 from agent_endpoint import TurnRequest
 
 FIXTURE = Path(__file__).parent / "fixtures" / "fake_steering.py"
+
+
+def wait_for_started_turn(record):
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        try:
+            messages = [json.loads(line) for line in record.read_text().splitlines()]
+        except (OSError, ValueError):
+            messages = []
+        if any(row.get("method") == "turn/start" for row in messages):
+            return
+        time.sleep(0.01)
+    raise AssertionError("fixture did not receive the initial turn")
 
 
 @pytest.fixture
@@ -91,6 +105,9 @@ def test_sent_input_without_receipt_is_unknown_and_never_restarted(
     with ThreadPoolExecutor(2) as executor:
         result = executor.submit(runtime.run, "Original", None, "device")
         try:
+            # This case tests a sent request with a lost receipt, not the
+            # separate unsent-startup path. Slow CI must reach the active turn.
+            wait_for_started_turn(runtime_setup)
             assert runtime.steer("Follow-up") == "unknown"
             with pytest.raises(agent._ProtocolError, match="acknowledgment"):
                 result.result(3)
@@ -121,6 +138,7 @@ def test_crash_after_steering_does_not_replay_original(runtime_setup, monkeypatc
     monkeypatch.setattr(agent, "_agent_endpoint", lambda *_: endpoint)
     with ThreadPoolExecutor(2) as executor:
         result = executor.submit(agent.ask_result, "Original")
+        wait_for_started_turn(runtime_setup)
         assert endpoint.steer("New instructions") == "unknown"
         assert result.result(3).failure.code == "request_failed"
     messages = [json.loads(line) for line in runtime_setup.read_text().splitlines()]

@@ -18,7 +18,7 @@ make your own.
 | Personal server | A small, self-hosted server for device connections, speech and assistant replies. It runs independently of our hosted service. |
 | Standalone Link | The core Link runtime used by our macOS app, adapted to run on its own with your server and assistant. The native Mac app is not included. |
 | Protocol, tests and guides | The device and Link interfaces, a simulated-device rehearsal, and instructions for changing your setup. |
-| Firmware | An integration checklist for now. Firmware source, board-specific installation and recovery are a separate release milestone. |
+| Firmware | PCB06 application source, a pinned build tool, USB provisioning, signed-restore verification and host tests. Hardware and recovery qualification remain separate. |
 
 Our hosted service uses a separate backend. This repository does not include its
 Azure deployment, account system, control plane or database-backed delivery.
@@ -71,16 +71,18 @@ setup works, these guides explain the parts and the connections between them.
 | Change speech services or connect another assistant | [Extending your setup](docs/extending.md) |
 | Understand or adapt the included connector | [Link guide](link-runtime/README.md) |
 | Build a compatible server or connector in another language | [Protocol reference](personal-server/PROTOCOL.md) |
-| Prepare for device integration | [Firmware checklist](firmware/README.md) |
+| Build firmware or prepare device integration | [Firmware source and build guide](firmware/README.md) |
 | Secure your setup or report a vulnerability | [Security](SECURITY.md) |
 | Change the code, run tests or propose a contribution | [Contributing](CONTRIBUTING.md) |
 | Understand community expectations | [Community conduct](CODE_OF_CONDUCT.md) |
 
 ## Current status
 
-The server and Link can be used with simulated devices today. Firmware, device
-provisioning and recovery still need hardware work; no installable firmware is
-included yet.
+The server and Link can be used with simulated devices today. PCB06 firmware
+source is included with the current cellular, microphone, button, battery and
+charging behavior. Build it for your exact board; no precompiled image or public
+recovery bundle is included. Independent physical-device setup still needs
+validation.
 
 Software checks use simulated devices and assistants. They do not establish
 live-provider compatibility, cellular connectivity or physical-device readiness.
