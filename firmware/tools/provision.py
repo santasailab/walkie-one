@@ -61,7 +61,7 @@ def provision(port: str, credential: str, pair_id: str, timeout: float) -> None:
                 reported = line.removeprefix("[provision] OK pair=")
                 if reported != pair_id:
                     raise RuntimeError("device reported a different pair ID")
-                print(f"Provisioned pair {pair_id} on {port}")
+                print("Device credential provisioned successfully.")
                 return
             if line.startswith("[provision] ERROR"):
                 raise RuntimeError("device rejected provisioning")

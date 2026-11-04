@@ -37,3 +37,43 @@ class ExtractCredentialTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProvisionOutputTests(unittest.TestCase):
+    def test_device_output_and_identifier_are_never_echoed(self):
+        import contextlib
+        import io
+        import secrets
+        from unittest import mock
+
+        pair = "private-device"
+        credential = f"v1.{pair}.device.{secrets.token_urlsafe(32)}"
+        for success in (True, False):
+            board = mock.MagicMock()
+            board.__enter__.return_value = board
+            board.readline.side_effect = [
+                credential.encode(),
+                (
+                    f"[provision] OK pair={pair}"
+                    if success
+                    else f"[provision] ERROR {credential}"
+                ).encode(),
+            ]
+            output = io.StringIO()
+            with (
+                mock.patch.object(provision.serial, "Serial", return_value=board),
+                mock.patch.object(provision.time, "sleep"),
+                contextlib.redirect_stdout(output),
+            ):
+                if success:
+                    provision.provision("/dev/test", credential, pair, 12)
+                    self.assertIn("successfully", output.getvalue())
+                else:
+                    with self.assertRaisesRegex(
+                        RuntimeError, "device rejected provisioning"
+                    ) as error:
+                        provision.provision("/dev/test", credential, pair, 12)
+                    self.assertNotIn(credential, str(error.exception))
+            self.assertNotIn(credential, output.getvalue())
+            self.assertNotIn(pair, output.getvalue())
+            self.assertNotIn("/dev/test", output.getvalue())
