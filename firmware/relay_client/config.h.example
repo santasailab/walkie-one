@@ -1,0 +1,6 @@
+#pragma once
+// Public hostname only; credentials are provisioned over USB into NVS.
+#define WIFI_SSID ""
+#define WIFI_PASS ""
+#define RELAY_HOST "your-server.example"
+#define RELAY_PATH "/device"

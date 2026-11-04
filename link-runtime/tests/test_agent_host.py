@@ -655,7 +655,7 @@ def test_model_prose_about_updating_codex_is_not_a_failure(monkeypatch):
                 )
             ],
             "permission_blocked",
-            agent.turn_blockers.PERMISSION_REPLY,
+            agent.turn_blockers.permission_reply("Calendar"),
         ),
         (
             [
@@ -992,7 +992,7 @@ def test_device_host_preserves_permission_detection_from_runtime_stderr(
     recorded = []
     monkeypatch.setattr(agent.turn_blockers, "record", recorded.append)
 
-    assert agent.ask("what is next?") == agent.turn_blockers.PERMISSION_REPLY
+    assert agent.ask("what is next?") == agent.turn_blockers.permission_reply("Calendar")
     assert recorded == ["Calendar"]
 
 

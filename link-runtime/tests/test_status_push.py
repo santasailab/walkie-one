@@ -179,3 +179,64 @@ def test_native_status_socket_closure_does_not_wait_for_another_update(monkeypat
                 assert "agent" in json.loads(await events.recv())
 
     asyncio.run(asyncio.wait_for(exercise(), 3))
+
+
+def test_battery_is_pair_bound_expires_and_never_survives_disconnect(monkeypatch):
+    now = [2000.0]
+    monkeypatch.setattr(link.time, "time", lambda: now[0])
+    monkeypatch.setattr(link, "_pair_devices", {})
+    monkeypatch.setattr(link, "_pair_online", {})
+    monkeypatch.setattr(link, "_notify", lambda: None)
+    token = link._route_pair.set("one")
+    try:
+        link._set_pair_online(
+            "one", True, {"percent": 83, "age_s": 1100, "power_state": "charging"}
+        )
+        link._set_pair_online("two", True, {"percent": 0, "age_s": 0})
+        assert link._active_device()["pair_id"] == "one"
+        assert link._active_device()["battery_pct"] == 83
+        assert link._active_device()["power_state"] == "charging"
+        assert link._active_device()["at"] == 900
+        now[0] += 101
+        assert link._active_device()["power_state"] is None
+        assert link._active_device()["battery_pct"] is None
+        link._set_pair_online("one", False)
+        link._set_pair_online("one", True)
+        assert link._active_device()["battery_pct"] is None
+        link._set_pair_online("one", True, {"percent": True, "age_s": 0})
+        assert link._active_device()["battery_pct"] is None
+        for state in ("charging", "plugged_in", "on_battery", None, "full", {}):
+            link._set_pair_online(
+                "one", True, {"percent": 80, "age_s": 0, "power_state": state}
+            )
+            expected = (
+                state if state in ("charging", "plugged_in", "on_battery") else None
+            )
+            assert link._active_device()["power_state"] == expected
+        link._clear_pair_online()
+        assert link._pair_devices == {}
+    finally:
+        link._route_pair.reset(token)
+
+
+def test_status_includes_each_shared_device_without_mixing_battery(monkeypatch):
+    import time
+
+    monkeypatch.setattr(
+        link, "_pair_online", {"one": True, "two": True, "offline": False}
+    )
+    monkeypatch.setattr(
+        link,
+        "_pair_devices",
+        {
+            "one": {**link._empty_device, "battery_pct": 83, "at": time.time()},
+            "two": {**link._empty_device, "battery_pct": 42, "at": time.time()},
+            "offline": {**link._empty_device, "battery_pct": 90, "at": time.time()},
+        },
+    )
+    snapshot = asyncio.run(link._status_snapshot())
+    devices = {row["pair_id"]: row for row in snapshot["devices"]}
+    assert devices["one"]["battery_pct"] == 83
+    assert devices["two"]["battery_pct"] == 42
+    assert devices["offline"]["online"] is False
+    assert devices["offline"]["battery_pct"] is None

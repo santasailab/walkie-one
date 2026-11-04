@@ -52,6 +52,19 @@ unsolicited notifications because it has no durable delivery service. Some
 shared runtime helpers support richer servers; their presence does not make
 those capabilities available on the minimal server.
 
+## Current device status
+
+Link now associates battery samples with the requesting device, retains charging
+or plugged-in state only when supplied, and clears samples on disconnect or
+after 20 minutes. These observations do not authorize a route. A final reply to
+a local approval keeps its original device target even if the primary changes.
+Mac permission failures name only a bounded app/permission and direct you to
+System Settings; the standalone edition does not require the native Mac app.
+
+The personal server still isolates steering to the device that started the
+active turn. It does not provide the company's cross-device conversation or
+managed background-delivery service.
+
 ## Extend it
 
 Use the [custom command adapter](../docs/extending.md#custom-command-adapter) for

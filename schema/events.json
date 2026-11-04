@@ -261,7 +261,7 @@
 
     "status": {
       "title": "device -> application transport. Occasional health. Lossy by design.",
-      "description": "Logged, never acted on. Once on connect, then every 15 minutes while connected. Not 60 seconds: that is 1440 transmissions a day of something nobody reads, on a device whose battery story is entirely about idle. The ping interval is already 240s, so this must never be the thing keeping the radio awake.",
+      "description": "Once on connect, then every 15 minutes while connected. PCB06 reports its fuel-gauge estimate as battery_pct; omit it when unavailable. Owner screens show fresh readings only while connected and expire them after 20 minutes. This event never establishes presence or routing authority. PCB06 also reports stable USB/charger transitions after a one-second debounce, coalesced to at most one report per five seconds; unchanged state keeps the 15-minute cadence.",
       "type": "object",
       "required": ["v", "type"],
       "additionalProperties": false,
@@ -269,11 +269,15 @@
         "v": {"const": 1},
         "type": {"const": "status"},
         "battery_pct": {"type": "integer", "minimum": 0, "maximum": 100},
+        "power_state": {"enum": ["charging", "plugged_in", "on_battery"], "description": "Optional PCB06 state from debounced USB presence and charger indication. charging requires both USB and CHRG asserted; plugged_in means USB with no active indication, not necessarily full. on_battery means no USB. This is not measured net battery current. Omitted when unavailable."},
         "rssi": {"type": "integer", "maximum": 0, "description": "dBm, negative."},
         "fw": {"type": "string", "maxLength": 32}
       },
       "examples": [
         {"v": 1, "type": "status", "battery_pct": 63, "rssi": -75, "fw": "0.1.0"},
+        {"v": 1, "type": "status", "battery_pct": 83, "power_state": "charging"},
+        {"v": 1, "type": "status", "battery_pct": 83, "power_state": "plugged_in"},
+        {"v": 1, "type": "status", "battery_pct": 83, "power_state": "on_battery"},
         {"v": 1, "type": "status"}
       ]
     },

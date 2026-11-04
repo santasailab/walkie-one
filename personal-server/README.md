@@ -91,10 +91,8 @@ git clone https://github.com/santasailab/walkie-one.git
 cd walkie-one
 ```
 
-If the repository is still private during release preparation, GitHub access is
-required. If cloning fails, sign in through your normal GitHub credential manager
-or request access from the maintainers. Never put a token in the clone URL or
-paste one into an AI chat.
+The repository is public and cloning needs no company credentials. Never put a
+token in the clone URL or paste one into an AI chat.
 Do not overwrite an existing checkout to make the clone work.
 
 ## Try it locally first
@@ -327,8 +325,9 @@ front door. Your SIM must have working data service. Do not paste server.json or
 the Link credential into firmware, and never disable TLS certificate validation.
 
 **Hardware stop point:** this file does not install anything on the board.
-The legacy USB credential writer does not install the complete endpoint/APN/trust
-profile. Follow the [firmware checklist](../firmware/README.md) for that installer.
+The USB credential writer installs only the device credential. Set the public
+hostname and CA trust in the PCB06 build and the carrier APN on the device, as
+explained in the [firmware guide](../firmware/README.md).
 Before replacing a device image, retain its current image/configuration and use
 the qualified board-specific procedure. Keep the company configuration available
 for returning to it; changing this server does not edit company records.
@@ -377,8 +376,9 @@ unheard replies. It never automatically repeats a possibly executed command.
 Check the assistant before retrying. Background notifications are explicitly
 rejected because this server has no durable mailbox. Managed OTA offers,
 company onboarding/claims and hosted-provider account flows are not included.
-Qualified firmware and USB recovery are still pending. A future standalone
-signed-update option can be added independently. This repository does not ship
+PCB06 firmware source and build/provisioning tools are included; physical
+qualification and a public recovery bundle remain separate. A standalone
+signed-update service can be added independently. This repository does not ship
 the company account system or database-backed delivery service.
 
 ## Security without extra infrastructure

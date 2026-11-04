@@ -14,15 +14,41 @@ import time
 
 BLOCKED = os.path.expanduser("~/.relay/needs-permission")
 
-PERMISSION_REPLY = (
-    "I don't have permission to do that on this Mac. Please come back to your "
-    "Mac and open WalkieOne Settings, then Mac access. Approve it on the Mac "
-    "and ask me again."
-)
-STALLED_REPLY = (
-    "This needs approval on your Mac. Open WalkieOne Settings, then Mac access. "
-    "Complete the macOS approval and ask me again."
-)
+def permission_name(value):
+    """Keep a bounded display name, never raw error text, paths or commands."""
+    if not isinstance(value, str):
+        return "Mac access"
+    if not re.fullmatch(r"[A-Z][A-Za-z0-9 .()_-]{0,47}", value):
+        return "Mac access"
+    return value.strip(" ._-") or "Mac access"
+
+
+def permission_reply(app):
+    app = permission_name(app)
+    reason = {
+        "Accessibility": "I need Accessibility permission to click and type on your Mac.",
+        "Screen Recording": "I need Screen Recording permission to see your Mac's screen.",
+        "Full Disk Access": "I need Full Disk Access to read the protected files for this task.",
+        "Files and Folders": "I need permission to access the folder for this task.",
+        "Contacts": "I need permission to access your contacts.",
+        "Mac access": "This task needs permission on your Mac, but I couldn't identify which permission.",
+    }.get(app, f"I need permission to use {app} on your Mac.")
+    return (reason + " Open System Settings on your Mac, then Privacy & Security, "
+            "to allow access for the app or tool making the request. Then ask me again, or ask me to do something else.")
+
+
+def permission_repair(app):
+    app = permission_name(app)
+    if app == "Mac access":
+        return ("The task couldn't identify which permission it needs. "
+                "Ask again while you're at your Mac.")
+    if app in {"Accessibility", "Screen Recording", "Full Disk Access",
+               "Files and Folders", "Contacts"}:
+        return f"Allow {app}, then ask again."
+    return f"Allow access to {app}, then ask again."
+
+
+PERMISSION_REPLY = permission_reply("Mac access")
 
 # Deliberately specific. A bare "operation not permitted" can be an ordinary
 # Unix file error and must not turn into a false macOS-consent diagnosis.
@@ -72,7 +98,7 @@ def permission_app(value):
     if not match:
         return "Mac access"
     name = " ".join(match.group(1).split()).strip(" ._-")
-    return name[:48] or "Mac access"
+    return permission_name(name)
 
 
 def event_permission(event):
@@ -126,6 +152,7 @@ def record(app, path=BLOCKED):
     """Persist one blocker for the app UI; never let bookkeeping break a turn."""
     if not app:
         return
+    app = permission_name(app)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         existing = set()

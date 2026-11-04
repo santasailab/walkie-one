@@ -27,11 +27,26 @@ def check_repository(root):
         if not path.exists():
             continue  # A tracked deletion has no content in the working tree.
         if (
-            path.name in {"server.json", "link.json", ".env", "command.json"}
+            path.name
+            in {"server.json", "link.json", ".env", "command.json", "config.h"}
             or path.name.startswith(".env.")
             and path.name != ".env.example"
             or ".jsonl" in path.name
-            or path.suffix in {".pem", ".key", ".p12", ".pfx", ".db", ".log", ".jsonl"}
+            or path.suffix
+            in {
+                ".pem",
+                ".key",
+                ".p12",
+                ".pfx",
+                ".db",
+                ".log",
+                ".jsonl",
+                ".bin",
+                ".elf",
+                ".map",
+                ".zip",
+                ".dump",
+            }
             or any(
                 part in {".context", ".venv", "node_modules", ".ssh", ".aws", ".relay"}
                 for part in relative.parts
@@ -48,6 +63,15 @@ def check_repository(root):
                 or {"devices", "link_credential", "speech"} <= value.keys()
             ):
                 failures.append(f"Generated credential profile: {relative}")
+        try:
+            source = path.read_text()
+        except UnicodeError:
+            source = ""
+        if re.search(
+            r"https?://[^\s/]*slack\.com/archives/|[/]Users/|github\.com/santasailab/relay(?:[/.\s]|$)",
+            source,
+        ):
+            failures.append(f"Private source reference: {relative}")
         if path.suffix != ".md":
             continue
         for href in re.findall(r"\[[^\]\n]*\]\(([^)\n]+)\)", path.read_text()):

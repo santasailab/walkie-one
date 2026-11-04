@@ -50,3 +50,29 @@ def test_source_schema_is_allowed_but_symlinks_cannot_import_external_files(repo
     assert CHECK["check_repository"](repository)[1] == [
         "Symlink is outside this source distribution: outside"
     ]
+
+
+@pytest.mark.parametrize(
+    "name", ["config.h", "nvs.bin", "flash.elf", "private.zip", "serial.dump"]
+)
+def test_force_added_firmware_artifacts_are_rejected(repository, name):
+    (repository / name).write_text("private fixture")
+    assert (
+        f"Private/generated artifact: {name}"
+        in CHECK["check_repository"](repository)[1]
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "https://workspace.slack.com/" + "archives/private",
+        "/" + "Users/example/private",
+        "https://github.com/santasailab/" + "relay/tree/main",
+    ],
+)
+def test_private_references_are_rejected_without_echoing_contents(repository, text):
+    (repository / "note.txt").write_text(text)
+    assert CHECK["check_repository"](repository)[1] == [
+        "Private source reference: note.txt"
+    ]

@@ -14,6 +14,8 @@ import subprocess
 import sys
 import threading
 
+from turn_blockers import permission_name
+
 SH_OUTPUT_MAX = 64 * 1024
 
 
@@ -153,7 +155,7 @@ def check_permissions_pending():
     if not pending:
         return True, "nothing has been blocked", None
     return None, "earlier access issues: " + ", ".join(pending), (
-        "Open WalkieOne Settings > Mac access to check current permissions, "
+        "Open System Settings > Privacy & Security to check permissions, "
         "then retry the affected task. These reports are not live grant state.")
 
 
@@ -190,7 +192,7 @@ def blocked_apps():
     except OSError:
         return set()
     known = {name.lower(): name for name in KNOWN_PERMISSION_APPS}
-    return {known[n.lower()] for n in names if n.lower() in known}
+    return {known.get(n.lower(), permission_name(n)) for n in names}
 
 
 def run():
