@@ -6,6 +6,12 @@ requests, but opening one does not guarantee inclusion, review time, or support.
 Discuss substantial upstream changes before investing in them.
 Follow the [community conduct](CODE_OF_CONDUCT.md) guidelines in project discussions.
 
+Forking and customizing Walkie One does not require an upstream contribution.
+The company maintains the official edition; you maintain your fork and choose
+whether to offer changes back. Aman (`@amankumar1906`) is the maintainer who
+decides what enters the official repository. Community pull requests are
+optional proposals, not a required step for using or modifying your device.
+
 The Walkie One Open Community License is source available and includes a
 hardware-sales allowance. Read its terms before distributing files or products.
 Private modifications do not have to be published.
@@ -53,11 +59,19 @@ them when necessary, and preserve hashes. These PRs require the same checks and
 maintainer approval as other changes; there is no automatic merge.
 
 Use a branch and pull request for changes after the initial repository import.
-`main` requires one independent approval from an owner in
-[CODEOWNERS](.github/CODEOWNERS), approval of the latest push, resolved review
-conversations and current passing CI. New commits dismiss stale approvals.
-These rules also apply to administrators; direct pushes, force pushes and branch
-deletion are blocked. Use squash merges to preserve the linear history.
+Only Aman (`@amankumar1906`) can merge a pull request into `main`. His merge
+decision is the final acceptance of the change. [CODEOWNERS](.github/CODEOWNERS)
+routes review to him. His account has a specific exception to the independent
+review requirement so his own updates do not need a second maintainer; that
+exception does not bypass CI. The separate main-branch update rule allows his
+changes only through pull requests.
+
+Current passing CI and resolved review conversations are required. Direct
+pushes, force pushes and branch deletion are blocked, including for
+administrators. Other contributors can discuss and review changes, but cannot
+merge them. Use squash merges to preserve the linear history. Repository
+administrators still control settings; this merge policy does not revoke their
+administrative access.
 Keep each PR focused, include meaningful regression tests, and update the
 existing guide when behavior changes. Use a Conventional Commit title such as
 `fix(server): reject replies routed to another device`.

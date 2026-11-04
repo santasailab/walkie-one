@@ -66,6 +66,12 @@ own connector. Your speech services are replaceable too.
 The team maintains the Python implementation. If you want to change how your
 setup works, these guides explain the parts and the connections between them.
 
+Santa's AI Lab maintains the official edition. Fork this repository to make
+your own version; you do not need to send your changes back or open a pull
+request. If you would like a change considered for the official edition, a
+pull request is welcome under the contribution terms. Aman decides what is
+merged upstream. Your fork and its releases remain yours to maintain.
+
 | What you want to do | Where to start |
 | --- | --- |
 | Change speech services or connect another assistant | [Extending your setup](docs/extending.md) |
