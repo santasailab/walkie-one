@@ -50,7 +50,7 @@
 // PCB06 input calibration, approved in a live listening test. Apply after rumble removal,
 // before the existing PCM16 clamp; this does not change microphone hardware.
 #ifndef RELAY_PCB06_MIC_GAIN
-#define RELAY_PCB06_MIC_GAIN 4
+#define RELAY_PCB06_MIC_GAIN 8
 #endif
 #if RELAY_PCB06_MIC_GAIN < 1 || RELAY_PCB06_MIC_GAIN > 8
 #error "RELAY_PCB06_MIC_GAIN must be an integer from 1 through 8"

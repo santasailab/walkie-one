@@ -49,8 +49,7 @@ int main(int argc,char**argv){
       int16_t got;std::memcpy(&got,bytes.data()+i*8,2);
       int16_t expected=1000;
       if(i>=opening.size()){
-        const size_t at=i-opening.size();expected=int32_t(bed[at%bed.size()])/16;
-        if(at<240)expected=int32_t(expected)*int32_t(at+1)/240;
+        expected=0;
       }
       assert(got==expected);
     }
@@ -58,11 +57,13 @@ int main(int argc,char**argv){
     std::vector<int16_t> data;
     for(int i=0;i<200;++i){auto next=chunk(player);data.insert(data.end(),next.begin(),next.end());}
     for(size_t i=0;i<opening.size();++i)assert(data[i]==1000);
-    for(size_t i=opening.size()+240;i<data.size();++i)assert(data[i]==125);
-    // More than two loop boundaries retain the quieter bed after the single fade.
+    for(size_t i=opening.size();i<data.size();++i)assert(data[i]==0);
+    assert(!player.ampAllowed());
+    // More than two loop boundaries remain silent after the opening.
     assert(data.size()>opening.size()+bed.size()*2);
     down=false;player.observe(down,false,now);
-    auto fade=chunk(player);assert(fade.front()==125 && fade.back()>2900);
+    auto fade=chunk(player);assert(fade.front()==0 && fade.back()>2900);
+    assert(player.ampAllowed());
     std::vector<int16_t> tail;
     for(int i=0;i<50 && player.active();++i){auto next=chunk(player);tail.insert(tail.end(),next.begin(),next.end());}
     assert(!player.active() && !player.ampAllowed());
@@ -73,7 +74,8 @@ int main(int argc,char**argv){
     auto zero=chunk(player);for(auto sample:zero)assert(sample==0);assert(!player.ampAllowed());
     silent=false;player.observe(down,silent,now);
     for(int i=0;i<6 && player.phase()!=Phase::Bed;++i)chunk(player);
-    assert(player.phase()==Phase::Bed);for(auto sample:chunk(player))assert(sample>=0 && sample<=125);
+    assert(player.phase()==Phase::Bed);for(auto sample:chunk(player))assert(sample==0);
+    assert(!player.ampAllowed());
   }else if(mode=="quick-tap"){
     down=false;player.observe(down,false,now);
     auto first=chunk(player);for(auto sample:first)assert(sample==1000);

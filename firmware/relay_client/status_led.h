@@ -7,7 +7,7 @@
 //            blue, so its white reads as aqua; the owner guide says aqua.
 //   blue   = assistant working (slow blink), Walkie One speaking (solid)
 //   green  = a reply is waiting (slow blink), fully charged (steady)
-//   orange = charging (slow blink)
+//   orange = charging (steady)
 //   red    = something needs fixing: pairing failed (solid, 3 s),
 //            no assistant (slow blink), no connection (fast blink)
 // Solid means happening now; blinking means waiting; faster means a problem.
@@ -69,9 +69,9 @@ inline Rgb blinking(Rgb color, uint32_t nowMs, uint32_t halfPeriodMs) {
   return (nowMs / halfPeriodMs) & 1 ? color : kOff;
 }
 
-inline Rgb batteryLed(BatteryLight battery, uint32_t nowMs) {
+inline Rgb batteryLed(BatteryLight battery) {
   switch (battery) {
-    case BatteryLight::Charging: return blinking(kOrange, nowMs, kSlowBlinkMs);
+    case BatteryLight::Charging: return kOrange;
     case BatteryLight::Charged: return kGreen;
     case BatteryLight::None: break;
   }
@@ -80,7 +80,7 @@ inline Rgb batteryLed(BatteryLight battery, uint32_t nowMs) {
 
 inline Rgb statusLed(const StatusInputs &in, uint32_t nowMs) {
   // Switched off, only the charger is worth showing.
-  if (in.asleep) return batteryLed(in.battery, nowMs);
+  if (in.asleep) return batteryLed(in.battery);
   switch (in.pairing) {
     case PairingLight::Paired:
       if (!in.assistantReady || in.connectionInProgress)
@@ -104,5 +104,5 @@ inline Rgb statusLed(const StatusInputs &in, uint32_t nowMs) {
   } else if (in.assistantWorking) {
     return blinking(kBlue, nowMs, kSlowBlinkMs);
   }
-  return batteryLed(in.battery, nowMs);
+  return batteryLed(in.battery);
 }

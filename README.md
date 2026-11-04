@@ -78,6 +78,7 @@ merged upstream. Your fork and its releases remain yours to maintain.
 | Understand or adapt the included connector | [Link guide](link-runtime/README.md) |
 | Build a compatible server or connector in another language | [Protocol reference](personal-server/PROTOCOL.md) |
 | Build firmware or prepare device integration | [Firmware source and build guide](firmware/README.md) |
+| Modify the electronics or print a case | [Editable KiCad, BOM, Gerbers and enclosure downloads](https://walkieone.com/open-source) |
 | Secure your setup or report a vulnerability | [Security](SECURITY.md) |
 | Change the code, run tests or propose a contribution | [Contributing](CONTRIBUTING.md) |
 | Understand community expectations | [Community conduct](CODE_OF_CONDUCT.md) |
@@ -85,7 +86,7 @@ merged upstream. Your fork and its releases remain yours to maintain.
 ## Current status
 
 The server and Link can be used with simulated devices today. PCB06 firmware
-source is included with the current cellular, microphone, button, battery and
+source is included at version **0.9.9**, with the current cellular, microphone, button, battery and
 charging behavior. Build it for your exact board; no precompiled image or public
 recovery bundle is included. Independent physical-device setup still needs
 validation.

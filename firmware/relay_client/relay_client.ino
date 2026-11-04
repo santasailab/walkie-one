@@ -94,7 +94,7 @@ extern "C" bool verifyRollbackLater() { return true; }
 #ifdef RELAY_BOARD_06
 // tools/build_pcb06.py --version sets the release version; hello reports it.
 #ifndef RELAY_FW_SEMVER
-#define RELAY_FW_SEMVER "0.9.8"
+#define RELAY_FW_SEMVER "0.9.9"
 #endif
 #define FW_VERSION RELAY_FW_SEMVER "-pcb06"
 #else

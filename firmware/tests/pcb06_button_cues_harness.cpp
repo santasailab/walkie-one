@@ -135,7 +135,7 @@ int main(int argc,char** argv){
     assert(board06PttPlayer.bedPosition()==bedPosition);
     const auto beforeResume=output.size();assert(board06PlayPttChunk());
     int16_t resumed;std::memcpy(&resumed,output.data()+beforeResume,2);
-    assert(resumed==int32_t(pcb06_ptt_sounds::kLoop[bedPosition])/16*volume/10);
+    assert(resumed==0 && !board06AmpOn);
     levels[1]=HIGH;board06ObservePtt();assert(board06PttPlayer.phase()==Pcb06PttPlayer::Phase::Close);
     for(int i=0;i<50 && board06PttPlayer.active();++i){board06ObservePtt();board06PlayPttChunk();}
     assert(!board06PttPlayer.active() && !board06AmpOn && recording);

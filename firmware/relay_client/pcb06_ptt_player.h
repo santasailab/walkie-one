@@ -9,9 +9,8 @@ class Pcb06PttPlayer {
   enum class Phase { Idle, Open, Bed, Close, Drain, Flush };
   static constexpr size_t kChunkSamples = 240, kFadeSamples = 240;
   static constexpr size_t kDrainSamples = 1200;
-  // Approved listening calibration: -24 dB from the asset, -18 dB from the old bed.
-  // Opening and closing cues retain their independently selected levels.
-  static constexpr int kBedGainNumerator = 1, kBedGainDenominator = 16;
+  // Keep held Talk silent; opening and closing cues remain audible.
+  static constexpr int kBedGainNumerator = 0, kBedGainDenominator = 16;
   Pcb06PttPlayer(const int16_t *open, size_t openCount,
                 const int16_t *close, size_t closeCount,
                 const int16_t *bed, size_t bedCount)
@@ -59,7 +58,10 @@ class Pcb06PttPlayer {
 
   bool active() const { return phase_ != Phase::Idle || preparedBytes_ != 0; }
   bool flushing() const { return phase_ == Phase::Flush; }
-  bool ampAllowed() const { return audibleEpisode_ && !silent_ && phase_ != Phase::Flush; }
+  bool ampAllowed() const {
+    return audibleEpisode_ && !silent_ && phase_ != Phase::Flush
+        && !(phase_ == Phase::Bed && kBedGainNumerator == 0);
+  }
   bool held() const { return stableDown_ && rawDown_; }
   Phase phase() const { return phase_; }
   uint32_t generation() const { return generation_; }
