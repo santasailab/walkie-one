@@ -327,7 +327,8 @@ the Link credential into firmware, and never disable TLS certificate validation.
 **Hardware stop point:** this file does not install anything on the board.
 The USB credential writer installs only the device credential. Set the public
 hostname and CA trust in the PCB06 build and the carrier APN on the device, as
-explained in the [firmware guide](../firmware/README.md).
+explained in the [firmware guide](../firmware/README.md). If serial flashing fails,
+use the [PCB06 USB-JTAG procedure](../firmware/FLASHING.md), not repeated BOOT/RESET attempts.
 Before replacing a device image, retain its current image/configuration and use
 the qualified board-specific procedure. Keep the company configuration available
 for returning to it; changing this server does not edit company records.

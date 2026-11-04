@@ -70,6 +70,14 @@ Preserve USB and mux pins so service access remains possible. Check these
 against your board before powering or writing it. Host tests check the mapping;
 they cannot inspect your physical board.
 
+## USB-JTAG flashing
+
+PCB06 can expose USB serial while serial bootloader flashing still fails.
+Use the ESP32-S3 native **USB-JTAG** path with the verified Espressif OpenOCD
+version in [the flashing guide](FLASHING.md). It explains boot-loop halting,
+exact component offsets, private NVS backup/comparison and post-boot checks.
+`restore.py` is serial-only and does not automatically switch to JTAG.
+
 ## Install and provision
 
 First run the [personal-server rehearsal](../personal-server/README.md), then
