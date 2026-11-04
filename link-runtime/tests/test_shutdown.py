@@ -60,8 +60,22 @@ def cleanup_trees(root):
 
 
 @pytest.mark.parametrize("cancel", [False, True])
-def test_alert_timeout_or_cancellation_kills_descendants(tmp_path, cancel):
+def test_alert_timeout_or_cancellation_kills_descendants(tmp_path, cancel, monkeypatch):
     fake = fake_tree(tmp_path)
+
+    class ReadyAsyncio:
+        def __getattr__(self, name):
+            return getattr(asyncio, name)
+
+        async def wait_for(self, awaitable, timeout):
+            if not cancel and timeout == 0.5:
+                # Measure the timeout after the real descendant exists. Cold
+                # interpreter startup on a hosted Mac is not process cleanup.
+                await asyncio.to_thread(wait_for, lambda: (tmp_path / "alert.pid").exists())
+            return await asyncio.wait_for(awaitable, timeout)
+
+    monkeypatch.setattr(alerts, "asyncio", ReadyAsyncio())
+
 
     async def exercise():
         task = asyncio.create_task(
@@ -83,7 +97,7 @@ def test_alert_timeout_or_cancellation_kills_descendants(tmp_path, cancel):
             assert await task is None
 
     try:
-        asyncio.run(asyncio.wait_for(exercise(), 5))
+        asyncio.run(asyncio.wait_for(exercise(), 15))
         pids = list(map(int, (tmp_path / "alert.pid").read_text().split()))
         wait_for(lambda: all(not alive(pid) for pid in pids))
     finally:
