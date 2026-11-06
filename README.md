@@ -1,5 +1,7 @@
 # Walkie One
 
+[![Walkie One handhelds in six colours beneath the Walkie One logo and the words “Delightfully simple. Oddly capable.”](docs/assets/walkie-one.png)](https://walkieone.com)
+
 **Make it yours.**
 
 We're building Walkie One to be something you love using every day. We also
