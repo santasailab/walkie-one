@@ -43,10 +43,10 @@ firmware connects with WSS on port 443. Never put a credential, Wi-Fi password,
 provider key or private TLS key in that file. This placeholder cannot connect
 to the company service by accident.
 
-The included trust anchor is the public ISRG Root X2 certificate. Your server's
-TLS chain must validate against it. If your server uses another CA, replace
-`RELAY_CA` in `relay_client.ino` with the appropriate **public CA certificate**
-and rebuild. Keep `tls.setCACert` and hostname verification enabled; do not use
+The included trust anchors are the public ISRG Root X2 and ISRG Root X1
+certificates. Your server's TLS chain must validate against one of them. If
+your server uses another CA, replace `RELAY_CA` in `relay_client.ino` with the
+appropriate **public CA certificate** and rebuild. Keep `tls.setCACert` and hostname verification enabled; do not use
 `setInsecure`. Test your public WSS route before installing a device build.
 
 Certificate validation needs a clock. The firmware starts from the mobile
