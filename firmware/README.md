@@ -152,6 +152,10 @@ The serial log prints why each boot happened (`[boot] cause=...`), and the
 3-second `[stat]` line includes the lowest free heap since boot. A restart
 after a crash, watchdog or brownout comes back without the boot chirp.
 
+The Talk opening sound means the microphone is open. A press made while the
+server is unreachable, or while the previous request is still uploading,
+cannot be recorded and stays silent from press to release.
+
 ## Restore official firmware
 
 `tools/restore.py` verifies a release's size, SHA-256 and Ed25519 signature using

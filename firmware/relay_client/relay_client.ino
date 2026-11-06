@@ -608,13 +608,27 @@ static bool board06DrainSpeaker() {
   return drained;
 }
 
+// The opening sound means the microphone is open. A press cannot become
+// speech with the relay away, or while an earlier request is still uploading
+// (startRecording refuses both), so that press is silent from down to up.
+// Decided once, on the press: recovery halfway must not start a late sound.
+static bool board06TalkRefused(bool down) {
+  static bool wasDown = false, refused = false;
+  if (!down) refused = false;
+  else if (!wasDown) refused = !wsOpen || (recording && !micCapturing);
+  wasDown = down;
+  return refused;
+}
+
 // Physical release is observed here even while loop() waits on the network.
 // Reply-owned DMA must first pass through the existing pause/drain handoff.
 static void board06ObservePtt() {
   static uint32_t lastFlushEpoch = UINT32_MAX;
   xSemaphoreTake(playbackMutex, portMAX_DELAY);
-  board06PttPlayer.observe(digitalRead(buttons.talk) == LOW,
-      muted || volume == 0 || offRequested, millis());
+  const bool down = digitalRead(buttons.talk) == LOW;
+  // Every sample, not only when audible: it tracks the press edge itself.
+  const bool refused = board06TalkRefused(down);
+  board06PttPlayer.observe(down, muted || volume == 0 || offRequested || refused, millis());
   if (board06PttPlayer.flushing() && (board06PttOwnsOutput || !playing)) {
     if (lastFlushEpoch != board06PttPlayer.flushEpoch()) {
       lastFlushEpoch = board06PttPlayer.flushEpoch();
