@@ -1,5 +1,9 @@
 # Walkie One
 
+<p align="center">
+  <img src="docs/assets/walkie-one-workbench.jpg" width="480" alt="White Walkie One prototype with blue and orange controls on a black workbench mat.">
+</p>
+
 **Make it yours.**
 
 We're building Walkie One to be something you love using every day. We also

@@ -38,6 +38,11 @@ private signing material and factory/device records are not included.
 
 ## Names and services
 
+The product artwork at `docs/assets/walkie-one.png` is original Walkie One
+artwork from Santa’s AI Lab, included to illustrate the original product.
+The README photograph at `docs/assets/walkie-one-workbench.jpg` was supplied by
+Aman Kumar and cropped and lightly retouched for this documentation.
+
 Walkie One names identify the original project. The license does not grant
 trademark, logo or endorsement rights. Independently made products must identify
 their own maker. Company hosting, cellular service, credentials and signing keys
