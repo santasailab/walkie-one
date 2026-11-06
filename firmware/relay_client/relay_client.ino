@@ -83,6 +83,7 @@ extern "C" bool verifyRollbackLater() { return true; }
 #include "reconnect_policy.h"
 #include "data_path_watch.h"
 #include "socket_timeouts.h"
+#include "boot_report.h"
 #include "ptt_gesture.h"
 #ifndef RELAY_CELLULAR  // Muse pairing needs Bluetooth and Wi-Fi; not the legacy cellular board
 #include "wifi_settings.h"
@@ -3076,6 +3077,23 @@ static void board06OtaService() {
 }
 #endif
 
+// An explicit declaration keeps Arduino's generated prototype after the type.
+static BootCause bootCause(int resetReason);
+static BootCause bootCause(int resetReason) {
+  switch (resetReason) {
+    case ESP_RST_POWERON: return BootCause::PowerOn;
+    case ESP_RST_SW: return BootCause::Requested;
+    case ESP_RST_PANIC:
+    case ESP_RST_CPU_LOCKUP: return BootCause::Crash;
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT: return BootCause::Watchdog;
+    case ESP_RST_BROWNOUT:
+    case ESP_RST_PWR_GLITCH: return BootCause::Brownout;
+    default: return BootCause::Other;
+  }
+}
+
 // A loop() stuck for 20 s panics. The restart keeps the on/off marker, so a
 // stuck on runtime comes back on and a stuck off runtime stays off.
 static void watchLoop() {
@@ -3114,6 +3132,10 @@ void setup() {
   Serial.printf("=== relay client %s ===\n", FW_VERSION);
   Serial.printf("chip %s, heap %lu\n", ESP.getChipModel(),
                 (unsigned long)ESP.getFreeHeap());
+  const BootCause cause = bootCause(esp_reset_reason());
+  Serial.printf("[boot] cause=%s\n", bootCauseName(cause));
+  // The firmware restarting itself gets no chirp; an update restart neither.
+  bool quietBoot = bootIsUnattended(cause);
 
 #ifndef RELAY_OFFICIAL_BUILD
   Serial.println("[build] custom build; automatic updates off");
@@ -3136,6 +3158,7 @@ void setup() {
   if (board06OtaUnproven) Serial.println("[ota] new image: waiting to reach the relay");
   // ponytail: a switch-on during a rolled-back first run is also quiet; rare.
   board06QuietBoot = board06OtaUnproven || otaBoot == OtaBoot::RolledBack;
+  quietBoot = quietBoot || board06QuietBoot;
   board06OtaSave();
 #endif
   pinMode(buttons.play, RELAY_BUTTON_INPUT_MODE);
@@ -3250,14 +3273,11 @@ void setup() {
 
   watchLoop();
 
-#ifdef RELAY_BOARD_06
   // An update restarts the Device by itself after 15 idle minutes, maybe at
   // night: no chirp or flash for the new image's first run, or for the old
-  // image coming back after a failed one.
-  if (!board06QuietBoot) bootChirp();
-#else
-  bootChirp();
-#endif
+  // image coming back after a failed one. The same after a crash, watchdog or
+  // brownout restart.
+  if (!quietBoot) bootChirp();
   help();
 }
 
@@ -3490,7 +3510,7 @@ void loop() {
   if (millis() - lastStat > 3000) {
     lastStat = millis();
     Serial.printf("[stat] staged=%luB(%lums) receiving=%d held=%d ready=%d ring=%lu "
-                  "rx=%lu under=%lu trunc=%lu peak_out=%ld heap=%lu rssi=%d %s\n",
+                  "rx=%lu under=%lu trunc=%lu peak_out=%ld heap=%lu minheap=%lu rssi=%d %s\n",
                   (unsigned long)playbackBytes,
                   (unsigned long)(uint64_t(playback.samples) * 1000 / SAMPLE_RATE_HZ),
                   playbackReceiving ? 1 : 0, playback.staged ? 1 : 0,
@@ -3499,7 +3519,8 @@ void loop() {
                   (unsigned long)framesRecvd,
                   (unsigned long)underruns,
                   (unsigned long)truncatedFrames, (long)peakWindow,
-                  (unsigned long)ESP.getFreeHeap(), networkRssi(),
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)ESP.getMinFreeHeap(), networkRssi(),
                   wsOpen ? "ws:up" : "ws:down");
     peakWindow = 0; peakPreGain = 0;
   }
