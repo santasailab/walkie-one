@@ -382,6 +382,7 @@ static const uint32_t RX_DEADLINE_MS = 390000;    // 1.5 * 240 s + slack
 static uint32_t lastRxMs       = 0;
 // Soft off is its own runtime: switching off or on restarts the firmware.
 static RTC_NOINIT_ATTR uint32_t softOffMarker;
+static RTC_NOINIT_ATTR BrownoutRecord brownoutRecord;
 static bool     asleep         = false;      // this is the switched-off runtime
 static volatile bool offRequested = false;   // close the socket, then restart off
 // 06 battery: set by loop(), read by powerTask() while switched off.
@@ -3209,6 +3210,14 @@ void setup() {
 
   asleep = bootsOff(softOffMarker, esp_reset_reason() == ESP_RST_POWERON);
   if (!asleep) softOffMarker = 0;
+  // Before anything is powered: a third brownout restart in a row stays off,
+  // like an empty battery, until someone charges it and switches it on.
+  if (brownoutStaysOff(brownoutRecord, cause) && !asleep) {
+    Serial.println("[power] repeated brownout restarts - staying off");
+    asleep = true;
+    softOffMarker = kSoftOffMarker;
+    switchOnRefused = true;  // loop() gives the empty-battery signal once
+  }
   loadProvisioning();
   loadButtonMap();
   loadVolume();
@@ -3349,6 +3358,11 @@ void setup() {
 
 void loop() {
   esp_task_wdt_reset();
+  static bool settled = false;
+  if (!settled && !asleep && millis() >= kBrownoutSettledMs) {
+    settled = true;
+    brownoutSettled(brownoutRecord);
+  }
 #ifdef RELAY_BOARD_06
   board06Power.update(digitalRead(PIN_USB_PRESENT_N) == LOW,
                       digitalRead(PIN_CHG_STAT_N) == LOW, millis());

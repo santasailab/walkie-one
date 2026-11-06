@@ -147,6 +147,10 @@ the same level while running, until it is charged and switched on again. An
 unreadable gauge does not block a start. The voltage floor is still a
 placeholder awaiting a measured brownout point on real hardware.
 
+The gauge can read healthy while the battery sags under the modem. Three
+brownout restarts in a row, with less than five minutes of running between
+them, also end switched off. Switching on again is a fresh attempt.
+
 The volume you choose is saved three seconds after the last change and
 restored at the next start, including after switching off and on. It is
 never written during Talk or playback.

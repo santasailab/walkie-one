@@ -37,4 +37,29 @@ int main() {
                           BootCause::Watchdog, BootCause::Brownout, BootCause::Other})
     assert(std::strlen(bootCauseName(cause)) > 0);
   assert(!std::strcmp(bootCauseName(BootCause::Watchdog), "watchdog"));
+
+  // RTC memory is undefined after power-on: garbage is not a count.
+  BrownoutRecord record{0xdeadbeef, 200};
+  assert(!brownoutStaysOff(record, BootCause::PowerOn) && record.count == 0);
+
+  // The gauge can read healthy while the cell sags under the modem. Three
+  // brownout restarts in a row and the Device stays off instead of looping.
+  assert(!brownoutStaysOff(record, BootCause::Brownout) && record.count == 1);
+  assert(!brownoutStaysOff(record, BootCause::Brownout) && record.count == 2);
+  assert(brownoutStaysOff(record, BootCause::Brownout));
+  assert(brownoutStaysOff(record, BootCause::Brownout));  // and stays there
+
+  // Switching it on again is a new attempt with a fresh count.
+  assert(!brownoutStaysOff(record, BootCause::Requested) && record.count == 0);
+  assert(!brownoutStaysOff(record, BootCause::Brownout));
+  // Any other restart in between breaks the run, and so does running well.
+  assert(!brownoutStaysOff(record, BootCause::Brownout));
+  assert(!brownoutStaysOff(record, BootCause::Watchdog) && record.count == 0);
+  assert(!brownoutStaysOff(record, BootCause::Brownout));
+  assert(!brownoutStaysOff(record, BootCause::Brownout));
+  brownoutSettled(record);
+  assert(!brownoutStaysOff(record, BootCause::Brownout) && record.count == 1);
+  // The count cannot wrap back to zero.
+  record.count = 255;
+  assert(brownoutStaysOff(record, BootCause::Brownout) && record.count == 255);
 }

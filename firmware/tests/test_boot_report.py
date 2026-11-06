@@ -49,6 +49,16 @@ class BootReportTests(unittest.TestCase):
         self.assertEqual(setup.count("bootChirp();"), 1)
         self.assertIn("if (!quietBoot) bootChirp();", setup)
         self.assertIn("bootIsUnattended(cause)", setup)
+        # A run of brownout restarts ends switched off, decided before anything
+        # is powered, and a boot that runs well forgets the run.
+        self.assertLess(
+            setup.index("brownoutStaysOff(brownoutRecord, cause)"),
+            setup.index("cellularSetup()"),
+        )
+        self.assertIn("softOffMarker = kSoftOffMarker;", setup)
+        loop = sketch[sketch.index("void loop() {") :]
+        self.assertIn("brownoutSettled(brownoutRecord);", loop)
+        self.assertIn("static RTC_NOINIT_ATTR BrownoutRecord brownoutRecord;", sketch)
         # Field diagnostics: the low-water mark, not only the current heap.
         self.assertIn("minheap=%lu", sketch)
 
