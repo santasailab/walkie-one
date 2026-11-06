@@ -68,6 +68,7 @@ extern "C" bool verifyRollbackLater() { return true; }
 #endif
 #include "src/audio/mp3_codec.h"
 #include "volume_button.h"
+#include "volume_store.h"
 #include "repaired_speaker.h"
 #include "pdm_speaker.h"
 #include "status_led.h"
@@ -225,6 +226,7 @@ static int volume = 1; // Audition2/sample4: gain2 x volume1/10 = amplitude/5.
 static int volume = 5;                       // 0..10
 #endif
 static bool muted = false;
+static VolumeStore volumeStore;
 // Lowered on a low battery so loud replies cannot brown out the modem
 // (battery_watch.h). The chosen `volume` is kept and returns on charge.
 // ponytail: replies and tones only; button clicks and the Talk sound are
@@ -481,6 +483,22 @@ static void buttonsCommand(String args) {
   Serial.println("[buttons] saved; restarting");
   Serial.flush();
   ESP.restart();
+}
+
+// The stored volume lives beside the credential; without one the board default
+// above stands.
+static void loadVolume() {
+  volume = VolumeStore::restore(provisionStore.getUChar("volume", 255), volume);
+  volumeStore.loaded(volume);
+}
+
+// A flash write stalls the audio paths, so the volume is written once it has
+// rested and never during Talk or playback.
+static void volumeSaveService() {
+  if (recording || playing || !volumeStore.due(volume, millis())) return;
+  const bool saved = provisionStore.putUChar("volume", uint8_t(volume)) != 0;
+  if (!saved) Serial.println("[vol] could not save");
+  volumeStore.written(saved, millis());
 }
 
 static void loadProvisioning() {
@@ -3105,6 +3123,7 @@ void setup() {
   if (!asleep) softOffMarker = 0;
   loadProvisioning();
   loadButtonMap();
+  loadVolume();
 #ifdef RELAY_BOARD_06
   board06Ota = OtaPolicy(pcb06_ota::load());
   const OtaBoot otaBoot = board06Ota.boot(RELAY_FW_SEMVER, millis());
@@ -3278,6 +3297,7 @@ void loop() {
   hadNetwork = haveNetwork;
 
   buttonService();
+  volumeSaveService();
 #ifdef RELAY_BOARD_06
   board06ButtonCueService();
   board06ServiceListenRequest();

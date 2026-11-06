@@ -138,6 +138,10 @@ the same level while running, until it is charged and switched on again. An
 unreadable gauge does not block a start. The voltage floor is still a
 placeholder awaiting a measured brownout point on real hardware.
 
+The volume you choose is saved three seconds after the last change and
+restored at the next start, including after switching off and on. It is
+never written during Talk or playback.
+
 ## Restore official firmware
 
 `tools/restore.py` verifies a release's size, SHA-256 and Ed25519 signature using

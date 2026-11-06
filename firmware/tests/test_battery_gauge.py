@@ -7,9 +7,9 @@ import unittest
 FIRMWARE = pathlib.Path(__file__).parents[1]
 
 
-def function(source, name, prefix="static "):
+def function(source, name):
     definition = re.search(
-        rf"^{prefix}[^\n]*\b{re.escape(name)}\([^;{{}}]*\)\s*{{", source, re.MULTILINE
+        rf"^static [^\n]*\b{re.escape(name)}\([^;{{}}]*\)\s*{{", source, re.MULTILINE
     )
     assert definition is not None, f"Missing sketch function: {name}"
     depth, end = 1, definition.end()
@@ -41,7 +41,7 @@ class BatteryGaugeTests(unittest.TestCase):
             )
             self.run_harness(source)
         # The check runs before the modem, speaker or microphone are started.
-        setup = function(sketch, "setup", prefix="")
+        setup = sketch[sketch.index("void setup() {") : sketch.index("void loop() {")]
         self.assertLess(
             setup.index("asleep = board06StartsOff(asleep);"),
             setup.index("cellularSetup()"),
