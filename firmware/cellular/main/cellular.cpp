@@ -37,6 +37,8 @@ std::atomic<unsigned> attemptCount{0};
 HardwareSerial modemUart(1);
 bool rawOpen = false, pppOpen = false, initialized = false;
 uint32_t lastSupplyOff = 0;
+int64_t networkUtc = 0;      // protected by configLock, with networkUtcAt
+uint32_t networkUtcAt = 0;
 
 const char *stateName(State value) {
   switch (value) {
@@ -203,6 +205,9 @@ bool connectAttempt(const Config &config, uint32_t generation, int &baudCeiling)
     if (!waitFor(500, generation)) return false;
   }
   if (!simReady) { state.store(State::SimLocked); return false; }
+  // Ask for the network's time and zone at attach. Optional: a modem or
+  // network without it leaves the clock to SNTP and the build stamp.
+  rawAt("AT+CTZU=1", response, 1000, generation);
   // LTE attachment uses the modem's stored PDP context. PPP.setApn() only
   // prepares a later dial, so apply the selected APN before enabling the radio.
   char profileCommand[cellular_policy::kMaxApn + 40];
@@ -264,6 +269,18 @@ bool connectAttempt(const Config &config, uint32_t generation, int &baudCeiling)
   if (!attached) { state.store(State::AttachError); return false; }
   if (commandAt("AT+CSQ", response, generation))
     cachedRssi.store(cellular_policy::signalDbm(response.c_str()));
+  // The network's time can arrive just after attachment: look three times.
+  for (int look = 0; look < 3; ++look) {
+    if (look && !waitFor(500, generation)) return false;
+    if (!commandAt("AT+CCLK?", response, generation)) break;
+    const int64_t utc = cellular_policy::networkTimeUtc(response.c_str());
+    if (!utc) continue;
+    portENTER_CRITICAL(&configLock);
+    networkUtc = utc;
+    networkUtcAt = millis();
+    portEXIT_CRITICAL(&configLock);
+    break;
+  }
   if (!wanted(generation)) return false;
   state.store(State::Dialing);
   if (!PPP.mode(ESP_MODEM_MODE_DATA) || !wanted(generation)) {
@@ -394,6 +411,18 @@ void cellularService() {
 
 bool cellularConnected() { return dataUp.load(); }
 void cellularRestart() { restartRequested.store(true); }
+
+// Runs on from the last reading. After 49 days without a new session millis()
+// wraps and this falls behind; the caller never moves its clock backward.
+bool cellularNetworkTime(int64_t &utcSeconds) {
+  portENTER_CRITICAL(&configLock);
+  const int64_t utc = networkUtc;
+  const uint32_t at = networkUtcAt;
+  portEXIT_CRITICAL(&configLock);
+  if (!utc) return false;
+  utcSeconds = utc + static_cast<uint32_t>(millis() - at) / 1000;
+  return true;
+}
 int cellularRssiDbm() { return dataUp.load() ? cachedRssi.load() : -1; }
 
 void cellularPrintStatus() {
@@ -553,6 +582,7 @@ bool cellularConnected() {
 
 // The USB-modem prototype's session is owned by its host driver.
 void cellularRestart() {}
+bool cellularNetworkTime(int64_t &) { return false; }
 
 int cellularRssiDbm() {
   // CSQ is reported in a modem-specific 0..31 scale. Until that query is

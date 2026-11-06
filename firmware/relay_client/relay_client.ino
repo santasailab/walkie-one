@@ -36,6 +36,7 @@
 #include <esp_heap_caps.h>
 #include <lwip/ip_addr.h>
 #include <time.h>
+#include <esp_sntp.h>
 #include <new>
 #include "config.h"
 #include "board_profile.h"
@@ -84,6 +85,7 @@ extern "C" bool verifyRollbackLater() { return true; }
 #include "data_path_watch.h"
 #include "socket_timeouts.h"
 #include "boot_report.h"
+#include "clock_seed.h"
 #include "ptt_gesture.h"
 #ifndef RELAY_CELLULAR  // Muse pairing needs Bluetooth and Wi-Fi; not the legacy cellular board
 #include "wifi_settings.h"
@@ -1189,21 +1191,36 @@ static time_t buildTime() {
 // ponytail: the build stamp drifts out of the certificate's window after about
 // three months of uptime with no SNTP. A reflash fixes it; an RTC or a working
 // NTP path fixes it properly.
+//
+// The mobile network's own time, when the modem has it, replaces that floor:
+// it is right however old the image is. Looked at before every dial, because a
+// later modem session may bring the time the first one lacked.
+static volatile bool sntpSynced = false;  // set from the SNTP task's first answer
+
+static void seedClock() {
+  int64_t network = 0;
+#ifdef RELAY_CELLULAR
+  if (!cellularNetworkTime(network)) network = 0;
+#endif
+  const int64_t seed = clockSeed(time(nullptr), buildTime(), network, sntpSynced);
+  if (!seed) return;
+  struct timeval tv = { .tv_sec = (time_t)seed, .tv_usec = 0 };
+  settimeofday(&tv, nullptr);
+  Serial.printf("[time] clock set from the %s: %s",
+                network && seed == network ? "mobile network" : "build stamp",
+                ctime(&tv.tv_sec));
+}
+
 static bool clockReady() {
   static bool started = false;
   if (!started) {
     ensureDns();                    // fixes the resolver for everything after
+    sntp_set_time_sync_notification_cb([](struct timeval *) { sntpSynced = true; });
     configTime(0, 0, "216.239.35.0", "162.159.200.1");
-    if (time(nullptr) < 1700000000) {
-      struct timeval tv = { .tv_sec = buildTime(), .tv_usec = 0 };
-      settimeofday(&tv, nullptr);
-      time_t now = tv.tv_sec;
-      Serial.printf("[time] no clock yet - seeded from the build stamp: %s",
-                    ctime(&now));
-    }
     started = true;
   }
-  return time(nullptr) > 1700000000;
+  seedClock();
+  return time(nullptr) > kClockUnsetBeforeS;
 }
 
 // Stream::setTimeout() is the per-character read wait in milliseconds; it

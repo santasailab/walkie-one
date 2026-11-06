@@ -117,6 +117,42 @@ inline int signalDbm(const char *response) {
 
 // Wait after the given number of consecutive failed attempts. There is no
 // attempt limit: out of coverage, the radio is tried again every five minutes.
+// AT+CCLK? answers +CCLK: "yy/MM/dd,hh:mm:ss+zz": local time and its offset
+// from UTC in quarter hours. Returns UTC seconds since 1970, or 0 when the
+// reply is malformed or the modem has not heard the network's time yet (it
+// then reports its 1970 or 1980 default).
+inline int64_t networkTimeUtc(const char *response) {
+  const char *p = response ? std::strstr(response, "+CCLK: \"") : nullptr;
+  if (!p) return 0;
+  p += 8;
+  const auto pair = [](const char *text) {
+    return text[0] >= '0' && text[0] <= '9' && text[1] >= '0' && text[1] <= '9'
+        ? (text[0] - '0') * 10 + (text[1] - '0') : -1;
+  };
+  int field[6];
+  for (int i = 0; i < 6; ++i) {
+    if ((field[i] = pair(p)) < 0) return 0;
+    p += 2;
+    if (i < 5 && *p++ != "//,::"[i]) return 0;
+  }
+  if (*p != '+' && *p != '-') return 0;
+  const bool west = *p++ == '-';
+  const int quarters = pair(p);
+  if (quarters < 0 || p[2] != '"' || quarters > (west ? 48 : 56)) return 0;
+  const int year = 2000 + field[0], month = field[1], day = field[2];
+  const bool leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+  static constexpr int monthDays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  // Two-digit years from 70 up are the modem's 19xx defaults, never 20xx.
+  if (field[0] < 24 || field[0] > 69 || month < 1 || month > 12 || day < 1 ||
+      day > monthDays[month - 1] + (month == 2 && leap) ||
+      field[3] > 23 || field[4] > 59 || field[5] > 59) return 0;
+  // Days from 1970-01-01, proleptic Gregorian.
+  const int y = year - (month <= 2), m = month + (month > 2 ? -3 : 9);
+  const int64_t days = 365LL * y + y / 4 - y / 100 + y / 400 + (153 * m + 2) / 5 + day - 1 - 719468;
+  const int64_t local = days * 86400 + field[3] * 3600 + field[4] * 60 + field[5];
+  return local - (west ? -quarters : quarters) * 900;
+}
+
 inline uint32_t retryDelayMs(unsigned attempts) {
   if (attempts <= 1) return 5000;
   if (attempts == 2) return 15000;

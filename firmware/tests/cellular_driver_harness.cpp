@@ -12,6 +12,7 @@ void resetDriver() {
   negotiatedBaud.store(0);
   receivedBytes.store(0);
   probeBaud.store(0);
+  networkUtc = 0;
   fake_cell::stored.clear();
   fake_cell::log.clear();
   fake_cell::now = 0;
@@ -27,6 +28,7 @@ void resetDriver() {
   fake_cell::rawDelayMs = 0;
   fake_cell::baudChanges.clear();
   fake_cell::attached = fake_cell::ip = true;
+  fake_cell::clock = "+CCLK: \"70/01/01,00:00:12+00\"";
   assert(cellularSetup());
 }
 
@@ -107,6 +109,27 @@ int main() {
   assert(!connectAttempt(config, generation, ceiling));
   assert(state.load() == State::AttachError && fake_cell::now < 95000);
   cleanup();
+
+  // The network's clock is read once attached, asked for before the radio
+  // comes up, and keeps running; a modem with no network time offers none.
+  resetDriver();
+  cellularCommand("CELL APN internet"); cellularCommand("CELL START");
+  config = snapshot(generation);
+  int64_t networkTime = -1;
+  assert(!cellularNetworkTime(networkTime));
+  ceiling = 921600;
+  assert(connectAttempt(config, generation, ceiling));
+  assert(!cellularNetworkTime(networkTime));
+  cleanup();
+  fake_cell::clock = "+CCLK: \"26/11/06,12:00:00-32\"";
+  fake_cell::modemBaud = 115200;
+  ceiling = 921600;
+  assert(connectAttempt(config, generation, ceiling));
+  assert(cellularNetworkTime(networkTime) && networkTime == 1793995200);
+  fake_cell::now += 90500;
+  assert(cellularNetworkTime(networkTime) && networkTime == 1793995200 + 90);
+  cleanup();
+  assert(cellularNetworkTime(networkTime) && networkTime == 1793995200 + 90);
 
   // A failed modem profile write cannot reach PPP or attempt a data session.
   resetDriver();

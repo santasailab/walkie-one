@@ -47,6 +47,7 @@ inline bool rawSilent = false, attached = true, ip = true, saveFails = false;
 inline std::string capability = "+IPR: (115200,230400,460800)";
 inline std::string log, apn;
 inline std::string rawReply;
+inline std::string clock = "+CCLK: \"70/01/01,00:00:12+00\"";
 inline uint32_t rawDelayMs = 0;
 inline std::vector<std::pair<uint32_t, int>> baudChanges;
 inline std::function<void()> onData, onDelay;
@@ -142,6 +143,7 @@ struct PPPFake {
     ++fake_cell::cmdCalls;
     if (std::strcmp(s, "AT+CGATT?") == 0) out = (fake_cell::attached && fake_cell::radioOnline && fake_cell::modemApn == fake_cell::apn) ? "+CGATT: 1\r\nOK" : "+CGATT: 0\r\nOK";
     else if (std::strcmp(s, "AT+CSQ") == 0) out = "+CSQ: 15,99\r\nOK";
+    else if (std::strcmp(s, "AT+CCLK?") == 0) out = (fake_cell::clock + "\r\nOK").c_str();
     else out = "OK";
     return true;
   }

@@ -49,6 +49,12 @@ TLS chain must validate against it. If your server uses another CA, replace
 and rebuild. Keep `tls.setCACert` and hostname verification enabled; do not use
 `setInsecure`. Test your public WSS route before installing a device build.
 
+Certificate validation needs a clock. The firmware starts from the mobile
+network's time when the modem reports one, lets SNTP correct it when reachable,
+and falls back to the image's build date. That fallback stops working once the
+build is older than your server's current certificate, so do not rely on it:
+check that your SIM's network supplies time, or that SNTP is reachable.
+
 Run `build_pcb06.py --help` for output and version options. Do not pass
 `--official` for personal builds. That option and `release.py` exist for release
 maintainers, require the corresponding private signing key outside Git, and do

@@ -53,6 +53,24 @@ int main() {
   assert(signalDbm("+CSQ: 99,99") == -1);
   assert(signalDbm("ERROR") == -1);
 
+  // Network time is local with a quarter-hour offset; the result is UTC.
+  assert(networkTimeUtc("\r\n+CCLK: \"26/11/06,12:00:00-32\"\r\n\r\nOK\r\n") == 1793995200);
+  assert(networkTimeUtc("+CCLK: \"27/01/01,02:30:00+08\"") == 1798763400);
+  assert(networkTimeUtc("+CCLK: \"24/02/29,23:59:59+00\"") == 1709251199);
+  assert(networkTimeUtc("+CCLK: \"69/12/31,23:59:59+00\"") == 3155759999);
+  // A modem that has not heard the network reports its 1970/1980 default.
+  for (const char *unset : {"+CCLK: \"70/01/01,00:00:12+00\"", "+CCLK: \"80/01/06,00:01:40+00\"",
+                            "+CCLK: \"23/12/31,23:59:59+00\"", "+CCLK: \"99/12/31,23:59:59+00\""})
+    assert(networkTimeUtc(unset) == 0);
+  for (const char *bad : {"", "ERROR\r\n", "+CCLK: \"26/11/06,12:00:00\"", "+CCLK: \"26/13/06,12:00:00+00\"",
+                          "+CCLK: \"26/00/06,12:00:00+00\"", "+CCLK: \"26/11/31,12:00:00+00\"",
+                          "+CCLK: \"25/02/29,12:00:00+00\"", "+CCLK: \"26/11/06,24:00:00+00\"",
+                          "+CCLK: \"26/11/06,12:60:00+00\"", "+CCLK: \"26/11/06,12:00:61+00\"",
+                          "+CCLK: \"26/11/06,12:00:00+97\"", "+CCLK: \"26/11/06 12:00:00+00\"",
+                          "+CCLK: \"2x/11/06,12:00:00+00\"", "+CCLK: 26/11/06,12:00:00+00", "+CCLK: \"26/11/06,12:00"})
+    assert(networkTimeUtc(bad) == 0);
+  assert(networkTimeUtc(nullptr) == 0);
+
   assert(!expired(0xfffffff0u, 0xffffff00u, 300));
   assert(expired(0x30u, 0xffffff00u, 300)); // Retry/registration clocks survive rollover.
   // No attempt limit: a Device out of coverage keeps trying, ever more slowly.
