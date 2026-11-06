@@ -132,6 +132,12 @@ that stops making progress, then closes and redials. An upload that keeps
 moving is not cut off, unless a single frame takes more than 30 seconds. The
 server has 20 seconds to finish its WebSocket upgrade response.
 
+A start on an empty battery without USB power (3 % or less, or under 3.60 V at
+rest) does not power the modem. The Device stays switched off, as it does at
+the same level while running, until it is charged and switched on again. An
+unreadable gauge does not block a start. The voltage floor is still a
+placeholder awaiting a measured brownout point on real hardware.
+
 ## Restore official firmware
 
 `tools/restore.py` verifies a release's size, SHA-256 and Ed25519 signature using

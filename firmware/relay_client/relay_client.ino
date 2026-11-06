@@ -2674,6 +2674,32 @@ static void showBatteryEmpty() {
 }
 
 #ifdef RELAY_BOARD_06
+// The first gauge read, before the modem, speaker or microphone are powered.
+// Returns whether this boot runs switched off. A boot that would start on an
+// empty battery (switched on, or restarted by the brownout it just caused)
+// stays off instead, and so does every restart after it, until it is charged.
+static bool board06StartsOff(bool asleepAtBoot) {
+  const auto allowed = []() {
+    BatteryReading reading{};
+    const bool read = readBatteryGauge(Wire, reading);
+    return batteryAllowsStart(read, reading.roundedPercent(), reading.volts,
+                              digitalRead(PIN_USB_PRESENT_N) == LOW);
+  };
+  // Two empty readings, as switching off while running takes: one unsettled
+  // sample just after a reset must not keep a charged Device off.
+  bool empty = !allowed();
+  if (empty) {
+    delay(500);
+    empty = !allowed();
+  }
+  batteryEmpty = empty;
+  if (asleepAtBoot || !batteryEmpty) return asleepAtBoot;
+  Serial.println("[battery] empty at start - staying off");
+  softOffMarker = kSoftOffMarker;
+  switchOnRefused = true;  // loop() gives the empty-battery signal once
+  return true;
+}
+
 // Reads the gauge every 30 s and at once after a plug change, once the power
 // state has settled. Returns a warning that is now due, if any.
 static BatteryAlert batteryService() {
@@ -3110,11 +3136,7 @@ void setup() {
   // and to refuse switching on with an empty battery.
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, 100000);
   Wire.setTimeOut(20);
-  if (asleep) {
-    BatteryReading reading;
-    batteryEmpty = readBatteryGauge(Wire, reading) && digitalRead(PIN_USB_PRESENT_N) == HIGH
-        && batteryEmptyNow(reading.roundedPercent(), reading.volts);
-  }
+  asleep = board06StartsOff(asleep);
 #endif
 
   // 4 KiB: esp_restart() runs the Wi-Fi shutdown handler on this stack.

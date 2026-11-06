@@ -1,9 +1,22 @@
 import pathlib
+import re
 import subprocess
 import tempfile
 import unittest
 
 FIRMWARE = pathlib.Path(__file__).parents[1]
+
+
+def function(source, name, prefix="static "):
+    definition = re.search(
+        rf"^{prefix}[^\n]*\b{re.escape(name)}\([^;{{}}]*\)\s*{{", source, re.MULTILINE
+    )
+    assert definition is not None, f"Missing sketch function: {name}"
+    depth, end = 1, definition.end()
+    while depth:
+        depth += (source[end] == "{") - (source[end] == "}")
+        end += 1
+    return source[definition.start() : end]
 
 
 class BatteryGaugeTests(unittest.TestCase):
@@ -15,6 +28,28 @@ class BatteryGaugeTests(unittest.TestCase):
 
     def test_low_battery_warnings_volume_cap_and_empty(self):
         self.run_harness("battery_watch_harness.cpp")
+
+    def test_empty_battery_boot_stays_off_before_the_modem_is_powered(self):
+        sketch = (FIRMWARE / "relay_client/relay_client.ino").read_text()
+        harness = (FIRMWARE / "tests/battery_start_harness.cpp").read_text()
+        with tempfile.TemporaryDirectory() as temporary:
+            source = pathlib.Path(temporary) / "battery_start.cpp"
+            source.write_text(
+                harness.replace(
+                    "// SKETCH_FUNCTIONS", function(sketch, "board06StartsOff")
+                )
+            )
+            self.run_harness(source)
+        # The check runs before the modem, speaker or microphone are started.
+        setup = function(sketch, "setup", prefix="")
+        self.assertLess(
+            setup.index("asleep = board06StartsOff(asleep);"),
+            setup.index("cellularSetup()"),
+        )
+        self.assertLess(
+            setup.index("asleep = board06StartsOff(asleep);"),
+            setup.index("if (asleep) {"),
+        )
 
     def run_harness(self, harness):
         with tempfile.TemporaryDirectory() as temporary:
