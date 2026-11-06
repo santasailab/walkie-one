@@ -9,6 +9,7 @@
 #include <PPP.h>
 #include <Preferences.h>
 #include <atomic>
+#include <climits>
 
 namespace {
 
@@ -19,7 +20,7 @@ constexpr uint32_t kReadyMs = 20000, kRegisterMs = 90000, kIpMs = 30000;
 constexpr uint32_t kOffMs = 3000;
 enum class State {
   Off, Starting, Sim, Baud, Registering, Dialing, Online, Backoff,
-  Exhausted, StorageError, NoAt, SimLocked, ApnError, BaudError, AttachError, PppError
+  StorageError, NoAt, SimLocked, ApnError, BaudError, AttachError, PppError
 };
 
 portMUX_TYPE configLock = portMUX_INITIALIZER_UNLOCKED;
@@ -47,7 +48,6 @@ const char *stateName(State value) {
     case State::Dialing: return "waiting for PPP address";
     case State::Online: return "PPP data up";
     case State::Backoff: return "retry wait";
-    case State::Exhausted: return "attempt limit reached; CELL START retries";
     case State::StorageError: return "configuration could not be saved; radio off";
     case State::NoAt: return "no AT response";
     case State::SimLocked: return "SIM missing, locked or not ready";
@@ -320,11 +320,12 @@ void worker(void *) {
         state.store(State::Off);
       }
     }
-    if (!config.enabled || !config.apn[0] || attempts >= cellular_policy::kMaxAttempts) {
+    if (!config.enabled || !config.apn[0]) {
       vTaskDelay(pdMS_TO_TICKS(50));
       continue;
     }
-    attemptCount.store(++attempts);
+    if (attempts < UINT_MAX) ++attempts;
+    attemptCount.store(attempts);
     if (connectAttempt(config, activeGeneration, baudCeiling)) {
       const uint32_t connectedAt = millis();
       while (wanted(activeGeneration) && PPP.hasIP()) vTaskDelay(pdMS_TO_TICKS(50));
@@ -334,12 +335,11 @@ void worker(void *) {
     const State failure = state.load();
     cleanup();
     if (!wanted(activeGeneration)) continue;
-    Serial.printf("[cell] attempt %u: %s\n", attempts, stateName(failure));
-    if (attempts >= cellular_policy::kMaxAttempts) state.store(State::Exhausted);
-    else {
-      state.store(State::Backoff);
-      waitFor(cellular_policy::retryDelayMs(attempts), activeGeneration);
-    }
+    const uint32_t wait = cellular_policy::retryDelayMs(attempts);
+    Serial.printf("[cell] attempt %u: %s; retry in %lu s\n", attempts, stateName(failure),
+                  static_cast<unsigned long>(wait / 1000));
+    state.store(State::Backoff);
+    waitFor(wait, activeGeneration);
   }
 }
 
@@ -378,10 +378,10 @@ bool cellularSetup() {
 }
 
 void cellularService() {
-  static State announced = State::Exhausted;
-  const State current = state.load();
+  static int announced = -1;
+  const int current = static_cast<int>(state.load());
   if (current != announced) {
-    Serial.printf("[cell] %s\n", stateName(current));
+    Serial.printf("[cell] %s\n", stateName(static_cast<State>(current)));
     announced = current;
   }
 }
@@ -392,12 +392,11 @@ int cellularRssiDbm() { return dataUp.load() ? cachedRssi.load() : -1; }
 void cellularPrintStatus() {
   uint32_t generation;
   const Config config = snapshot(generation);
-  Serial.printf("[cell] %s; enabled=%s APN=%s UART=%d advertised-max=%d probe-baud=%d RXbytes=%lu data=%s attempt=%u/%u RSSI=%d (cached before PPP)\n",
+  Serial.printf("[cell] %s; enabled=%s APN=%s UART=%d advertised-max=%d probe-baud=%d RXbytes=%lu data=%s attempt=%u RSSI=%d (cached before PPP)\n",
       stateName(state.load()), config.enabled ? "yes" : "no",
       config.apn[0] ? "configured" : "missing", negotiatedBaud.load(), advertisedBaud.load(),
       probeBaud.load(), static_cast<unsigned long>(receivedBytes.load()),
-      dataUp.load() ? "up" : "down", attemptCount.load(),
-      cellular_policy::kMaxAttempts, cachedRssi.load());
+      dataUp.load() ? "up" : "down", attemptCount.load(), cachedRssi.load());
   if (negotiatedBaud.load() > 0 && negotiatedBaud.load() < 921600)
     Serial.println("[cell] UART below live 24kHz PCM rate; buffered audio required");
 }

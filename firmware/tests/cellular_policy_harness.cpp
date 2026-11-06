@@ -55,6 +55,9 @@ int main() {
 
   assert(!expired(0xfffffff0u, 0xffffff00u, 300));
   assert(expired(0x30u, 0xffffff00u, 300)); // Retry/registration clocks survive rollover.
-  assert(kMaxAttempts == 3);
-  assert(retryDelayMs(1) == 5000 && retryDelayMs(2) == 15000);
+  // No attempt limit: a Device out of coverage keeps trying, ever more slowly.
+  assert(retryDelayMs(0) == 5000 && retryDelayMs(1) == 5000 && retryDelayMs(2) == 15000);
+  assert(retryDelayMs(3) == 30000 && retryDelayMs(4) == 60000 && retryDelayMs(5) == 120000);
+  assert(retryDelayMs(6) == 240000 && retryDelayMs(7) == kMaxRetryDelayMs && kMaxRetryDelayMs == 300000);
+  assert(retryDelayMs(1000) == kMaxRetryDelayMs && retryDelayMs(~0u) == kMaxRetryDelayMs);
 }

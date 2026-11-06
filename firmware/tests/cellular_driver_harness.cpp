@@ -142,12 +142,22 @@ int main() {
   resetDriver();
   cellularCommand("CELL APN internet"); cellularCommand("CELL START");
   fake_cell::rawSilent = true;
+  // A silent modem is retried without limit; the supply stays off between
+  // attempts and each wait is longer than the last.
+  static uint32_t backoffStarted, longestBackoff;
+  backoffStarted = longestBackoff = 0;
   fake_cell::onDelay = [] {
-    if (state.load() == State::Exhausted) throw std::runtime_error("attempts exhausted");
+    if (state.load() == State::Backoff) {
+      assert(fake_cell::pins[21] == LOW);
+      if (!backoffStarted) backoffStarted = fake_cell::now;
+      longestBackoff = std::max(longestBackoff, fake_cell::now - backoffStarted);
+    } else backoffStarted = 0;
+    if (attemptCount.load() >= 8) throw std::runtime_error("still retrying");
   };
   try { worker(nullptr); assert(false); } catch (const std::runtime_error &) {}
-  assert(attemptCount.load() == 3 && !cellularConnected());
-  assert(fake_cell::pins[21] == LOW && fake_cell::now < 110000);
+  assert(attemptCount.load() == 8 && !cellularConnected());
+  assert(longestBackoff >= cellular_policy::kMaxRetryDelayMs - 10);
+  assert(fake_cell::log.find("attempt limit") == std::string::npos);
   fake_cell::onDelay = nullptr;
   cleanup();
 

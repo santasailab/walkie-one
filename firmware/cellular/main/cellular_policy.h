@@ -10,7 +10,7 @@ namespace cellular_policy {
 
 constexpr size_t kMaxApn = 100;
 constexpr uint32_t kConfigMagic = 0x43454c4c;
-constexpr unsigned kMaxAttempts = 3;
+constexpr uint32_t kMaxRetryDelayMs = 300000;
 
 enum class AtResult { Pending, Ok, Error };
 
@@ -115,8 +115,14 @@ inline int signalDbm(const char *response) {
   return csq >= 0 && csq <= 31 ? -113 + csq * 2 : -1;
 }
 
+// Wait after the given number of consecutive failed attempts. There is no
+// attempt limit: out of coverage, the radio is tried again every five minutes.
 inline uint32_t retryDelayMs(unsigned attempts) {
-  return attempts <= 1 ? 5000 : 15000;
+  if (attempts <= 1) return 5000;
+  if (attempts == 2) return 15000;
+  uint32_t wait = 30000;
+  for (unsigned i = 3; i < attempts && wait < kMaxRetryDelayMs; ++i) wait *= 2;
+  return wait < kMaxRetryDelayMs ? wait : kMaxRetryDelayMs;
 }
 
 inline bool expired(uint32_t now, uint32_t start, uint32_t duration) {

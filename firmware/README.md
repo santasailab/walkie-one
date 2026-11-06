@@ -114,6 +114,11 @@ issuer, which may differ from the roaming network. Never paste a SIM identifier
 or a private serial/NVS dump into chat. Verify registration, PPP, DNS, TLS and
 authenticated WebSocket separately; an AT response is not an internet connection.
 
+Once started, the modem is retried without an attempt limit. A failed attempt
+powers the radio down, then waits 5, 15 and 30 seconds, doubling up to five
+minutes between later attempts. A data session held for 30 seconds starts the
+sequence again. `CELL STOP` is the only thing that ends the retries.
+
 ## Restore official firmware
 
 `tools/restore.py` verifies a release's size, SHA-256 and Ed25519 signature using
