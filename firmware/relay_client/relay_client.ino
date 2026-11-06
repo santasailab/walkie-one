@@ -81,6 +81,7 @@ extern "C" bool verifyRollbackLater() { return true; }
 #include "mic_filter.h"
 #include "reconnect_policy.h"
 #include "data_path_watch.h"
+#include "socket_timeouts.h"
 #include "ptt_gesture.h"
 #ifndef RELAY_CELLULAR  // Muse pairing needs Bluetooth and Wi-Fi; not the legacy cellular board
 #include "wifi_settings.h"
@@ -1053,6 +1054,7 @@ static const uint8_t *wsFrame = nullptr;
 // One sender for every opcode. A client MUST mask, per RFC 6455.
 static bool wsSendFrame(uint8_t opcode, const uint8_t *payload, size_t len) {
   if (!tls.connected()) return false;
+  const uint32_t started = millis();
   uint8_t hdr[14];
   size_t h = 0;
   hdr[h++] = 0x80 | opcode;
@@ -1068,13 +1070,22 @@ static bool wsSendFrame(uint8_t opcode, const uint8_t *payload, size_t len) {
   for (int i = 0; i < 4; i++) mask[i] = (uint8_t)esp_random();
   memcpy(hdr + h, mask, 4); h += 4;
   if (tls.write(hdr, h) != (int)h) return false;
+  // Every completed write is progress. A slow uplink may take several stalls
+  // of up to kSocketTimeoutMs to move one frame; only no progress is a hang.
+  esp_task_wdt_reset();
 
   uint8_t chunk[512];
   size_t sent = 0;
   while (sent < len) {
+    if (uint32_t(millis() - started) >= kFrameSendMs) {
+      Serial.println("[ws] frame could not be sent in time - closing");
+      tls.stop();
+      return false;
+    }
     size_t n = min(sizeof(chunk), len - sent);
     for (size_t i = 0; i < n; i++) chunk[i] = payload[sent + i] ^ mask[(sent + i) & 3];
     if (tls.write(chunk, n) != (int)n) return false;
+    esp_task_wdt_reset();
     sent += n;
   }
   return true;
@@ -1176,17 +1187,51 @@ static bool clockReady() {
   return time(nullptr) > 1700000000;
 }
 
+// Stream::setTimeout() is the per-character read wait in milliseconds; it
+// never bounded the socket. setConnectionTimeout() does: the TCP connect, and
+// a TLS write that stops making progress.
+static void configureRelaySocket() {
+  tls.setCACert(RELAY_CA);
+  tls.setTimeout(kUpgradeReadMs);
+  tls.setConnectionTimeout(kSocketTimeoutMs);
+  // Without this the handshake can block forever on a network that drops the
+  // SYN instead of refusing it - and a blocked loop() takes the serial console
+  // with it, so the board looks dead rather than stuck.
+  tls.setHandshakeTimeout(kTlsHandshakeS);
+}
+
+// Reads the upgrade response: the 101 status line, then headers up to the
+// blank line. Each line feeds the watchdog, so the whole response has
+// kUpgradeTotalMs. Headers that stop arriving are a failed dial, not the end
+// of the headers: what is still in flight would be read as WebSocket frames.
+static bool wsAwaitUpgrade() {
+  const uint32_t started = millis();
+  while (!tls.available() && uint32_t(millis() - started) < 10000) {
+    delay(10);
+    esp_task_wdt_reset();
+  }
+  String status = tls.readStringUntil('\n');
+  esp_task_wdt_reset();
+  if (status.indexOf("101") < 0) {
+    Serial.printf("[ws] handshake rejected: %s\n", status.c_str());
+    return false;
+  }
+  while (tls.connected() && uint32_t(millis() - started) < kUpgradeTotalMs) {
+    String line = tls.readStringUntil('\n');
+    esp_task_wdt_reset();  // each header line may wait kUpgradeReadMs
+    if (line == "\r") return true;
+    if (!line.length()) break;
+  }
+  Serial.println("[ws] upgrade response never finished");
+  return false;
+}
+
 static bool wsConnect() {
   if (!relayCredential.length()) return false;
   wsReachedRelay = false;
   ensureDns();
   tls.stop();
-  tls.setCACert(RELAY_CA);
-  tls.setTimeout(15);
-  // Without this the handshake can block forever on a network that drops the
-  // SYN instead of refusing it - and a blocked loop() takes the serial console
-  // with it, so the board looks dead rather than stuck.
-  tls.setHandshakeTimeout(30);
+  configureRelaySocket();
 
   // tls.connect() blocks, and verifying a four-deep ECDSA chain over a slow
   // VLAN can outlast the 20 s task watchdog - which reboots the board in the
@@ -1228,17 +1273,9 @@ static bool wsConnect() {
                "Authorization: " + relayCredential + "\r\n\r\n";
   tls.print(req);
 
-  uint32_t t0 = millis();
-  while (!tls.available() && millis() - t0 < 10000) { delay(10); esp_task_wdt_reset(); }
-  String status = tls.readStringUntil('\n');
-  if (status.indexOf("101") < 0) {
-    Serial.printf("[ws] handshake rejected: %s\n", status.c_str());
+  if (!wsAwaitUpgrade()) {
     tls.stop();
     return false;
-  }
-  while (tls.connected()) {
-    String line = tls.readStringUntil('\n');
-    if (line.length() <= 1) break;
   }
   Serial.printf("[ws] connected to %s%s\n", HOST, PATH);
   return true;
@@ -2990,7 +3027,7 @@ static void board06OtaService() {
 // A loop() stuck for 20 s panics. The restart keeps the on/off marker, so a
 // stuck on runtime comes back on and a stuck off runtime stays off.
 static void watchLoop() {
-  esp_task_wdt_config_t wdt = {.timeout_ms = 20000, .idle_core_mask = 0,
+  esp_task_wdt_config_t wdt = {.timeout_ms = kLoopWatchdogMs, .idle_core_mask = 0,
                                .trigger_panic = true};
   esp_task_wdt_reconfigure(&wdt);
   esp_task_wdt_add(nullptr);

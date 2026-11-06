@@ -127,6 +127,11 @@ doubles that period, up to an hour, so a server outage does not keep cycling
 the radio. Any answer from the server resets it, including a refusal or a
 certificate the Device rejects: neither is the modem's fault.
 
+The server connection allows 15 seconds for the TCP connect and for a write
+that stops making progress, then closes and redials. An upload that keeps
+moving is not cut off, unless a single frame takes more than 30 seconds. The
+server has 20 seconds to finish its WebSocket upgrade response.
+
 ## Restore official firmware
 
 `tools/restore.py` verifies a release's size, SHA-256 and Ed25519 signature using
