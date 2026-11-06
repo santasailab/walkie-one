@@ -1442,10 +1442,17 @@ static void flushMicBatch() { sendMicFrames(true); }
 // a tap stays on the Device (taps open Muse pairing).
 // Called only with micMutex held. A separate task checks the physical input,
 // so a slow network write cannot leave microphone clocks running on release.
+// A driver that refuses to stop is discarded, never a reason to restart the
+// firmware in someone's hand: the next press builds a new channel. Only a
+// channel that cannot be released either still restarts, because it would
+// hold the microphone port and leave Talk dead until the next restart anyway.
 static void stopMicCapture() {
   if (!micCapturing) return;
-  ESP_ERROR_CHECK(i2s_channel_disable(rxChan));
   micCapturing = false;
+  if (i2s_channel_disable(rxChan) == ESP_OK) return;
+  Serial.println("[mic] capture did not stop cleanly; channel discarded");
+  ESP_ERROR_CHECK(i2s_del_channel(rxChan));
+  rxChan = nullptr;
 }
 
 #ifdef RELAY_BOARD_06
@@ -1648,7 +1655,8 @@ static void stopRecording() {
   {
     MicLock guard;
     stopMicCapture();
-    ESP_ERROR_CHECK(i2s_del_channel(rxChan));
+    if (rxChan && i2s_del_channel(rxChan) != ESP_OK)
+      Serial.println("[mic] channel was not released cleanly");
     rxChan = nullptr;
   }
   // A release can beat the loop's talk.start check by a few milliseconds.

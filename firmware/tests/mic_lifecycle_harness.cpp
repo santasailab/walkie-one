@@ -41,8 +41,11 @@ struct i2s_pdm_rx_config_t {
 static i2s_chan_handle_t rxChan = nullptr;
 static bool micCapturing = false;
 struct MicLock {};
-#define ESP_ERROR_CHECK(result) assert((result) == ESP_OK)
+// On the Device a failed check aborts and restarts the firmware.
+static int restarts = 0;
+#define ESP_ERROR_CHECK(result) do { if ((result) != ESP_OK) ++restarts; } while (0)
 static int liveChannels = 0, generation = 0, failInit = 0, failEnable = 0;
+static int failDisable = 0, failDelete = 0;
 int i2s_new_channel(i2s_chan_config_t* cfg, void*, i2s_chan_handle_t* out) {
 #ifdef RELAY_BOARD_06
   assert(cfg->port == I2S_NUM_0);
@@ -62,9 +65,10 @@ int i2s_channel_enable(Channel* c) {
   if (failEnable) return failEnable;
   c->enabled = true; return ESP_OK;
 }
-int i2s_channel_disable(Channel* c) { c->enabled = false; return ESP_OK; }
+// The driver refuses to stop a channel it no longer considers running.
+int i2s_channel_disable(Channel* c) { c->enabled = false; return failDisable; }
 int i2s_del_channel(Channel* c) {
-  assert(!c->enabled); delete c; --liveChannels; return ESP_OK;
+  assert(!c->enabled); delete c; --liveChannels; return failDelete;
 }
 struct {
   template<class... T> void printf(const char*, T...) {}
@@ -197,4 +201,42 @@ int main() {
   pumpMic();
   assert(micSamplesRead == 24000u * 900);
   assert(!recording && rxChan == nullptr && liveChannels == 0);
+
+  // A driver error while stopping never restarts the firmware. The channel is
+  // discarded on release and the next press records on a new one.
+  for (int *failure : {&failDisable, &failDelete}) {
+    samplesPerRead = 1;
+    now = 5000;
+    held = true;
+    startRecording();
+    assert(recording && rxChan->enabled);
+    previous = generation;
+    *failure = 0x103;  // ESP_ERR_INVALID_STATE
+    held = false;
+    guardMicRelease();
+    assert(!micCapturing && (!rxChan || !rxChan->enabled));
+    stopRecording();
+    assert(!recording && rxChan == nullptr && liveChannels == 0);
+    *failure = 0;
+    held = true;
+    startRecording();
+    assert(recording && rxChan->enabled && generation > previous);
+    held = false;
+    guardMicRelease();
+    stopRecording();
+    assert(!recording && rxChan == nullptr && liveChannels == 0);
+  }
+  assert(restarts == 0);
+
+  // A channel that will neither stop nor be released holds the microphone
+  // port until a restart, so that one case still takes the restart.
+  now = 9000;
+  held = true;
+  startRecording();
+  failDisable = failDelete = 0x103;
+  held = false;
+  guardMicRelease();
+  assert(restarts == 1 && !micCapturing && rxChan == nullptr);
+  failDisable = failDelete = 0;
+  stopRecording();
 }
