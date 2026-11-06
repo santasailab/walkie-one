@@ -114,7 +114,10 @@ your selected server decides whether it is authorized. A personal-server
 credential grants no access to the company service. Close other serial clients
 before provisioning. Opening serial may reset the board.
 
-In a local 115200-baud serial terminal, while idle, use `CELL STOP`,
+Add `--apn <your-provider-apn>` to store the mobile data APN and start the
+modem in the same run, or `--apn <value> --keep-credential` to change only
+those settings. The tool sends the same console commands you can type in a
+local 115200-baud serial terminal while idle: `CELL STOP`,
 `CELL APN <your-provider-apn>`, then `CELL START`. The APN belongs to the SIM
 issuer, which may differ from the roaming network. Never paste a SIM identifier
 or a private serial/NVS dump into chat. Verify registration, PPP, DNS, TLS and
