@@ -119,6 +119,14 @@ powers the radio down, then waits 5, 15 and 30 seconds, doubling up to five
 minutes between later attempts. A data session held for 30 seconds starts the
 sequence again. `CELL STOP` is the only thing that ends the retries.
 
+A data session can report an address while nothing crosses it. When dials
+never reach your server, or an open connection goes silent, at least three
+times over three minutes while the modem reports data, the firmware
+power-cycles the modem and dials again. Each restart that does not help
+doubles that period, up to an hour, so a server outage does not keep cycling
+the radio. Any answer from the server resets it, including a refusal or a
+certificate the Device rejects: neither is the modem's fault.
+
 ## Restore official firmware
 
 `tools/restore.py` verifies a release's size, SHA-256 and Ed25519 signature using

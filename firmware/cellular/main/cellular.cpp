@@ -20,7 +20,7 @@ constexpr uint32_t kReadyMs = 20000, kRegisterMs = 90000, kIpMs = 30000;
 constexpr uint32_t kOffMs = 3000;
 enum class State {
   Off, Starting, Sim, Baud, Registering, Dialing, Online, Backoff,
-  StorageError, NoAt, SimLocked, ApnError, BaudError, AttachError, PppError
+  StorageError, NoAt, SimLocked, ApnError, BaudError, AttachError, PppError, Restarting
 };
 
 portMUX_TYPE configLock = portMUX_INITIALIZER_UNLOCKED;
@@ -28,7 +28,7 @@ Config desired = cellular_policy::emptyConfig();
 uint32_t desiredGeneration = 1;
 TaskHandle_t workerTask = nullptr;
 std::atomic<State> state{State::Off};
-std::atomic<bool> dataUp{false};
+std::atomic<bool> dataUp{false}, restartRequested{false};
 std::atomic<int> cachedRssi{-1}, negotiatedBaud{0};
 std::atomic<int> advertisedBaud{0};
 std::atomic<int> probeBaud{0};
@@ -55,6 +55,7 @@ const char *stateName(State value) {
     case State::BaudError: return "UART capability or speed verification failed";
     case State::AttachError: return "network attachment timeout";
     case State::PppError: return "PPP failed or disconnected";
+    case State::Restarting: return "restart requested; data session ended";
   }
   return "unknown";
 }
@@ -326,11 +327,16 @@ void worker(void *) {
     }
     if (attempts < UINT_MAX) ++attempts;
     attemptCount.store(attempts);
+    // A request left over from an earlier session is forgotten here, before
+    // this one reports data: one made after that must not be lost.
+    restartRequested.store(false);
     if (connectAttempt(config, activeGeneration, baudCeiling)) {
       const uint32_t connectedAt = millis();
-      while (wanted(activeGeneration) && PPP.hasIP()) vTaskDelay(pdMS_TO_TICKS(50));
+      while (wanted(activeGeneration) && PPP.hasIP() && !restartRequested.load())
+        vTaskDelay(pdMS_TO_TICKS(50));
       if (cellular_policy::expired(millis(), connectedAt, 30000)) attempts = 0;
-      if (wanted(activeGeneration)) state.store(State::PppError);
+      if (wanted(activeGeneration))
+        state.store(restartRequested.exchange(false) ? State::Restarting : State::PppError);
     }
     const State failure = state.load();
     cleanup();
@@ -387,6 +393,7 @@ void cellularService() {
 }
 
 bool cellularConnected() { return dataUp.load(); }
+void cellularRestart() { restartRequested.store(true); }
 int cellularRssiDbm() { return dataUp.load() ? cachedRssi.load() : -1; }
 
 void cellularPrintStatus() {
@@ -543,6 +550,9 @@ void cellularService() {
 bool cellularConnected() {
   return gotIp;
 }
+
+// The USB-modem prototype's session is owned by its host driver.
+void cellularRestart() {}
 
 int cellularRssiDbm() {
   // CSQ is reported in a modem-specific 0..31 scale. Until that query is

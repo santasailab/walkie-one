@@ -161,6 +161,70 @@ int main() {
   fake_cell::onDelay = nullptr;
   cleanup();
 
+  // A requested restart power-cycles a live session and dials again with the
+  // same settings; it is not a configuration change and writes nothing.
+  resetDriver();
+  cellularCommand("CELL APN internet"); cellularCommand("CELL START");
+  static int restartPhase;
+  static uint32_t restartGeneration;
+  restartPhase = 0;
+  fake_cell::onDelay = [] {
+    if (restartPhase == 0 && cellularConnected()) {
+      restartGeneration = desiredGeneration;
+      fake_cell::stored.clear();
+      cellularRestart();
+      restartPhase = 1;
+    } else if (restartPhase == 1 && !cellularConnected()) {
+      assert(fake_cell::pins[21] == LOW);
+      restartPhase = 2;
+    } else if (restartPhase == 2 && cellularConnected()) {
+      throw std::runtime_error("reconnected");
+    }
+  };
+  try { worker(nullptr); assert(false); } catch (const std::runtime_error &) {}
+  assert(fake_cell::beginCalls == 2 && desired.enabled);
+  assert(desiredGeneration == restartGeneration && fake_cell::stored.empty());
+  assert(fake_cell::log.find("restart requested") != std::string::npos);
+  fake_cell::onDelay = nullptr;
+  cleanup();
+
+  // A restart requested as the session comes up is not lost to the worker's
+  // own bookkeeping: the new session is restarted too.
+  resetDriver();
+  cellularCommand("CELL APN internet"); cellularCommand("CELL START");
+  fake_cell::onData = [] { cellularRestart(); };
+  static uint32_t upSince;
+  upSince = 0;
+  fake_cell::onDelay = [] {
+    if (fake_cell::beginCalls >= 2) throw std::runtime_error("restarted");
+    if (!cellularConnected()) return;
+    fake_cell::onData = nullptr;
+    if (!upSince) upSince = fake_cell::now;
+    if (fake_cell::now - upSince >= 1000) throw std::runtime_error("request lost");
+  };
+  try { worker(nullptr); assert(false); } catch (const std::runtime_error &outcome) {
+    assert(std::string(outcome.what()) == "restarted");
+  }
+  assert(fake_cell::log.find("restart requested") != std::string::npos);
+  fake_cell::onDelay = nullptr; fake_cell::onData = nullptr;
+  cleanup();
+
+  // A restart requested with no session is forgotten, not applied to the next.
+  resetDriver();
+  cellularCommand("CELL APN internet"); cellularCommand("CELL START");
+  cellularRestart();
+  static uint32_t onlineSince;
+  onlineSince = 0;
+  fake_cell::onDelay = [] {
+    if (!cellularConnected()) { assert(!onlineSince); return; }
+    if (!onlineSince) onlineSince = fake_cell::now;
+    if (fake_cell::now - onlineSince >= 1000) throw std::runtime_error("stayed online");
+  };
+  try { worker(nullptr); assert(false); } catch (const std::runtime_error &) {}
+  assert(fake_cell::beginCalls == 1);
+  fake_cell::onDelay = nullptr;
+  cleanup();
+
   resetDriver();
   cellularCommand("CELL APN internet"); cellularCommand("CELL START");
   fake_cell::saveFails = true;

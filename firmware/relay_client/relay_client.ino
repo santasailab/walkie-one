@@ -27,6 +27,7 @@
 #include <Preferences.h>
 #include <driver/i2s_std.h>          // ESP-IDF 5.x API - NOT driver/i2s.h
 #include <mbedtls/base64.h>
+#include <mbedtls/x509.h>
 #include <esp_task_wdt.h>
 #include <esp_random.h>
 #include <esp_mac.h>
@@ -79,6 +80,7 @@ extern "C" bool verifyRollbackLater() { return true; }
 #include "websocket_reader.h"
 #include "mic_filter.h"
 #include "reconnect_policy.h"
+#include "data_path_watch.h"
 #include "ptt_gesture.h"
 #ifndef RELAY_CELLULAR  // Muse pairing needs Bluetooth and Wi-Fi; not the legacy cellular board
 #include "wifi_settings.h"
@@ -326,6 +328,11 @@ static_assert(STATUS_WITH_PING_MS + 240000 < 20UL * 60 * 1000,
 static const uint32_t IDLE_NAP_MS = 10;
 // Board-independent retry timing; the first boot dial is the only fast path.
 static reconnect_policy::Policy reconnectPolicy;
+// Restarts a bearer that reports data while the relay stays out of reach.
+static DataPathWatch dataPath;
+static_assert(kTlsCertificateRejected == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED,
+              "data_path_watch.h must match the pinned mbedTLS");
+static bool wsReachedRelay = false;  // the last dial got as far as a TLS session
 // The relay pings every 240 s. Silence well past that is not a quiet link, it
 // is a black-holed one: a carrier NAT rebind leaves TCP "connected" here while
 // nothing can cross, and tls.connected() cannot see the difference. Without
@@ -373,6 +380,16 @@ static void scheduleRetry(int closeCode = 0) {
 // Spread IP recovery without cancelling a slower authorization retry.
 static void retryNow() {
   reconnectPolicy.networkAvailable(millis(), jitterRandom());
+}
+
+// A dial never reached the relay, or its open socket went silent. Redialing
+// over a dead modem session cannot recover, so a sustained run restarts it.
+static void dataPathUnreachable() {
+#ifdef RELAY_CELLULAR
+  if (!networkConnected() || !dataPath.unreachable(millis())) return;
+  Serial.println("[net] relay unreachable over a live bearer; restarting the modem");
+  cellularRestart();
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -1161,6 +1178,7 @@ static bool clockReady() {
 
 static bool wsConnect() {
   if (!relayCredential.length()) return false;
+  wsReachedRelay = false;
   ensureDns();
   tls.stop();
   tls.setCACert(RELAY_CA);
@@ -1185,7 +1203,7 @@ static bool wsConnect() {
                 (unsigned long)(millis() - tlsStart));
   if (!up) {
     char err[160] = {0};
-    tls.lastError(err, sizeof(err));
+    wsReachedRelay = dialReachedRelay(false, tls.lastError(err, sizeof(err)));
     time_t now = time(nullptr);
     Serial.printf("[ws] mbedtls says: %s\n", err[0] ? err : "(nothing)");
     Serial.printf("[ws] clock is %s", ctime(&now));
@@ -1193,6 +1211,7 @@ static bool wsConnect() {
                   (unsigned long)ESP.getFreeHeap());
     return false;
   }
+  wsReachedRelay = true;
   uint8_t rnd[16];
   for (int i = 0; i < 16; i++) rnd[i] = (uint8_t)esp_random();
   unsigned char key[32];
@@ -3186,6 +3205,7 @@ void loop() {
   if (!haveNetwork && hadNetwork) {
     // An old TCP socket cannot survive moving to a different access point.
     if (wsOpen) connectionEnded();
+    dataPath.bearerDown();
   }
   if (haveNetwork && !hadNetwork) retryNow();
   hadNetwork = haveNetwork;
@@ -3438,9 +3458,13 @@ void loop() {
       wsOpen = true;
       clearAvailability();
       reconnectPolicy.connected(millis());
+      dataPath.reached();
       lastRxMs = millis();
       announceConnection();
     } else {
+      // A relay that answered, even to refuse, proves the bearer works.
+      if (wsReachedRelay) dataPath.reached();
+      else dataPathUnreachable();
       scheduleRetry();
     }
     return;
@@ -3457,6 +3481,7 @@ void loop() {
   if (millis() - lastRxMs > RX_DEADLINE_MS) {
     Serial.printf("[ws] silent %lu ms - link is dead, reconnecting\n",
                   (unsigned long)(millis() - lastRxMs));
+    dataPathUnreachable();
     connectionEnded();
     return;
   }
