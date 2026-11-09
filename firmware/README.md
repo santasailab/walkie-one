@@ -205,7 +205,7 @@ credential, transfer ownership, or provide company hosting.
 
 Continuous integration runs the same three commands' public parts: the host
 suite, the security scan, and the PCB06 target build with the placeholder
-hostname (Arduino CLI 1.5.1, core 3.3.11, checksummed downloads). The target
+hostname (Arduino CLI 1.5.1, core 3.3.11, checksummed download, no cache). The target
 build catches what the host suite cannot, such as an auto-generated prototype
 placed before its type's include; it proves nothing about hardware.
 

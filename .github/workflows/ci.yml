@@ -86,11 +86,6 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
       - run: ./scripts/setup.sh
-      - name: Cache the Arduino ESP32 core and toolchains
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.arduino15
-          key: arduino15-esp32-${{ env.ESP32_CORE_VERSION }}-cli-${{ env.ARDUINO_CLI_VERSION }}
       - name: Install Arduino CLI and the exact ESP32 core
         run: |
           set -euo pipefail
