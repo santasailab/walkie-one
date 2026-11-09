@@ -26,6 +26,7 @@ enum class State {
 portMUX_TYPE configLock = portMUX_INITIALIZER_UNLOCKED;
 Config desired = cellular_policy::emptyConfig();
 uint32_t desiredGeneration = 1;
+uint32_t storedGeneration = 0;  // the generation setup read from storage
 TaskHandle_t workerTask = nullptr;
 std::atomic<State> state{State::Off};
 std::atomic<bool> dataUp{false}, restartRequested{false};
@@ -327,7 +328,9 @@ void worker(void *) {
       attemptCount.store(0);
       negotiatedBaud.store(0);
       advertisedBaud.store(0);
-      if (!persist(config)) {
+      if (generation == storedGeneration) {
+        state.store(State::Off);  // what setup read from storage is stored already
+      } else if (!persist(config)) {
         config.enabled = false;
         state.store(State::StorageError);
         portENTER_CRITICAL(&configLock);
@@ -393,6 +396,7 @@ bool cellularSetup() {
         cellular_policy::validConfig(saved)) desired = saved;
     preferences.end();
   }
+  storedGeneration = desiredGeneration;
   if (!Network.begin()) return false;
   if (xTaskCreate(worker, "cellular", 6144, nullptr, 2, &workerTask) != pdPASS) return false;
   initialized = true;

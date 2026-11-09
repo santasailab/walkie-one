@@ -52,6 +52,7 @@ inline uint32_t rawDelayMs = 0;
 inline std::vector<std::pair<uint32_t, int>> baudChanges;
 inline std::function<void()> onData, onDelay;
 inline std::vector<uint8_t> stored;
+inline unsigned putCalls = 0;
 }
 
 constexpr int LOW = 0, HIGH = 1, INPUT = 0, OUTPUT = 1, SERIAL_8N1 = 0;
@@ -162,6 +163,7 @@ class Preferences {
     std::memcpy(out, fake_cell::stored.data(), size); return size;
   }
   size_t putBytes(const char *, const void *data, size_t size) {
+    ++fake_cell::putCalls;
     if (fake_cell::saveFails) return 0;
     const auto *bytes = static_cast<const uint8_t *>(data);
     fake_cell::stored.assign(bytes, bytes + size); return size;

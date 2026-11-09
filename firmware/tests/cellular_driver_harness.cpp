@@ -14,6 +14,7 @@ void resetDriver() {
   probeBaud.store(0);
   networkUtc = 0;
   fake_cell::stored.clear();
+  fake_cell::putCalls = 0;
   fake_cell::log.clear();
   fake_cell::now = 0;
   fake_cell::beginCalls = fake_cell::cmdCalls = 0;
@@ -149,6 +150,29 @@ int main() {
   ceiling = 921600;
   assert(!connectAttempt(config, generation, ceiling));
   assert(state.load() == State::BaudError && ceiling == 230400 && fake_cell::beginCalls == 0);
+  cleanup();
+
+  // Settings loaded from storage at setup are already stored: the worker's
+  // first pass must neither rewrite them nor announce "settings saved", and
+  // must still start the modem with them.
+  resetDriver();
+  {
+    Config stored = cellular_policy::emptyConfig();
+    stored.enabled = 1;
+    std::strcpy(stored.apn, "internet");
+    const auto *bytes = reinterpret_cast<const uint8_t *>(&stored);
+    fake_cell::stored.assign(bytes, bytes + sizeof stored);
+  }
+  initialized = false;  // resetDriver() already ran setup on empty storage
+  assert(cellularSetup());
+  assert(desired.enabled && std::strcmp(desired.apn, "internet") == 0);
+  fake_cell::onDelay = [] {
+    if (state.load() == State::Starting) throw std::runtime_error("modem starting");
+  };
+  try { worker(nullptr); assert(false); } catch (const std::runtime_error &) {}
+  assert(fake_cell::putCalls == 0);
+  assert(fake_cell::log.find("settings saved") == std::string::npos);
+  fake_cell::onDelay = nullptr;
   cleanup();
 
   // An APN/START submitted before the worker first runs must still be persisted.
