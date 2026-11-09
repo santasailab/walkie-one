@@ -9,12 +9,16 @@ void resetDriver() {
   desired = cellular_policy::emptyConfig();
   desiredGeneration = 1;
   state.store(State::Off);
+  restartRequested.store(false);
+  shutdownRequested.store(false);
+  supplyLive.store(false);
   negotiatedBaud.store(0);
   receivedBytes.store(0);
   probeBaud.store(0);
   networkUtc = 0;
   fake_cell::stored.clear();
   fake_cell::putCalls = 0;
+  fake_cell::pinEvents.clear();
   fake_cell::log.clear();
   fake_cell::now = 0;
   fake_cell::beginCalls = fake_cell::cmdCalls = 0;
@@ -63,8 +67,12 @@ int main() {
   assert(fake_cell::cmdCalls == commands);
   assert(fake_cell::log.find("example.private") == std::string::npos);
   cellularCommand("CELL STOP");
-  assert(!cellularConnected() && !desired.enabled && fake_cell::pins[21] == LOW);
+  // STOP ends the session at once but leaves the supply to the worker, which
+  // powers the module down in order; main never cuts a live modem.
+  assert(!cellularConnected() && !desired.enabled && fake_cell::pins[21] == HIGH);
   assert(!powerPin(kKey, HIGH, generation) && fake_cell::pins[14] == LOW);
+  cleanup();
+  assert(fake_cell::pins[21] == LOW);
   assert(persist(desired));
   Config saved{};
   std::memcpy(&saved, fake_cell::stored.data(), sizeof(saved));
@@ -77,8 +85,9 @@ int main() {
   fake_cell::onData = [] { cellularCommand("CELL STOP"); };
   ceiling = 921600;
   assert(!connectAttempt(config, generation, ceiling));
-  assert(!cellularConnected() && fake_cell::pins[21] == LOW);
+  assert(!cellularConnected());  // the attempt stops; cleanup powers down in order
   cleanup();
+  assert(fake_cell::pins[21] == LOW);
 
   resetDriver();
   cellularCommand("CELL APN internet"); cellularCommand("CELL START");
@@ -129,8 +138,10 @@ int main() {
   assert(cellularNetworkTime(networkTime) && networkTime == 1793966400);
   fake_cell::now += 90500;
   assert(cellularNetworkTime(networkTime) && networkTime == 1793966400 + 90);
-  cleanup();
-  assert(cellularNetworkTime(networkTime) && networkTime == 1793966400 + 90);
+  cleanup();  // the time survives the session; the power-off wait advances it
+  assert(cellularNetworkTime(networkTime) &&
+         networkTime == 1793966400 + (90500 + cellular_policy::kPowerOffHoldMs +
+                                      cellular_policy::kPowerOffSettleMs) / 1000);
 
   // A failed modem profile write cannot reach PPP or attempt a data session.
   resetDriver();
@@ -172,6 +183,65 @@ int main() {
   try { worker(nullptr); assert(false); } catch (const std::runtime_error &) {}
   assert(fake_cell::putCalls == 0);
   assert(fake_cell::log.find("settings saved") == std::string::npos);
+  fake_cell::onDelay = nullptr;
+  cleanup();
+
+  // Cutting the supply mid-operation risks the modem's flash and the SIM.
+  // Cleanup after a session holds PWRKEY for the power-off gesture, waits for
+  // the module to shut down, and only then removes the supply.
+  resetDriver();
+  cellularCommand("CELL APN internet"); cellularCommand("CELL START");
+  config = snapshot(generation);
+  ceiling = 921600;
+  assert(connectAttempt(config, generation, ceiling) && fake_cell::pins[21] == HIGH);
+  fake_cell::pinEvents.clear();
+  cleanup();
+  {
+    uint32_t keyDown = 0, keyUp = 0, supplyOff = 0;
+    for (const auto &event : fake_cell::pinEvents) {
+      if (event.pin == kKey && event.level == HIGH && !keyDown) keyDown = event.at;
+      if (event.pin == kKey && event.level == LOW && keyDown && !keyUp) keyUp = event.at;
+      if (event.pin == kSupply && event.level == LOW) supplyOff = event.at;
+    }
+    assert(keyDown && keyUp && supplyOff);
+    assert(keyUp - keyDown >= cellular_policy::kPowerOffHoldMs);
+    assert(supplyOff >= keyUp + cellular_policy::kPowerOffSettleMs);
+    assert(fake_cell::pins[21] == LOW && fake_cell::pins[14] == LOW);
+  }
+  // With the supply already off there is nothing to power down: no PWRKEY pulse.
+  fake_cell::pinEvents.clear();
+  cleanup();
+  for (const auto &event : fake_cell::pinEvents) assert(event.pin != kKey);
+
+  // Switching off: the sketch asks for a shutdown, the worker ends the session
+  // and powers the module down, reports it, and stays down without dialing
+  // again or touching the saved settings. The restart that follows starts fresh.
+  resetDriver();
+  cellularCommand("CELL APN internet"); cellularCommand("CELL START");
+  static int offPhase;
+  offPhase = 0;
+  fake_cell::onDelay = [] {
+    if (offPhase == 0 && cellularConnected()) {
+      fake_cell::putCalls = 0;
+      fake_cell::pinEvents.clear();
+      cellularShutdown();
+      offPhase = 1;
+    } else if (offPhase == 1 && cellularPoweredDown()) {
+      offPhase = 2;
+    } else if (offPhase == 2 && fake_cell::delays % 40 == 0) {
+      throw std::runtime_error("stayed down");
+    }
+  };
+  assert(!cellularPoweredDown() || fake_cell::pins[21] == LOW);
+  try { worker(nullptr); assert(false); } catch (const std::runtime_error &) {}
+  assert(offPhase == 2 && fake_cell::beginCalls == 1 && fake_cell::pins[21] == LOW);
+  assert(desired.enabled && fake_cell::putCalls == 0);
+  {
+    bool keyHeld = false;
+    for (const auto &event : fake_cell::pinEvents)
+      if (event.pin == kKey && event.level == HIGH) keyHeld = true;
+    assert(keyHeld);
+  }
   fake_cell::onDelay = nullptr;
   cleanup();
 
@@ -222,8 +292,10 @@ int main() {
       cellularRestart();
       restartPhase = 1;
     } else if (restartPhase == 1 && !cellularConnected()) {
-      assert(fake_cell::pins[21] == LOW);
-      restartPhase = 2;
+      // The session ends first; the supply follows only after the power-off gesture.
+      static bool keyHeld;
+      if (fake_cell::pins[14] == HIGH) keyHeld = true;
+      if (fake_cell::pins[21] == LOW) { assert(keyHeld); keyHeld = false; restartPhase = 2; }
     } else if (restartPhase == 2 && cellularConnected()) {
       throw std::runtime_error("reconnected");
     }

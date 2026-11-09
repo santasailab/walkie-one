@@ -11,6 +11,16 @@ namespace cellular_policy {
 constexpr size_t kMaxApn = 100;
 constexpr uint32_t kConfigMagic = 0x43454c4c;
 constexpr uint32_t kMaxRetryDelayMs = 300000;
+// SIM7672G power-off gesture: PWRKEY held at least 2.5 s, then the module
+// detaches and shuts down before the supply may be removed. The settle time
+// is a placeholder until measured on hardware (no STATUS pin on PCB06).
+constexpr uint32_t kPowerOffHoldMs = 2600;
+constexpr uint32_t kPowerOffSettleMs = 3000;
+// How long a restart waits for the worker to finish that: notice (a bounded
+// modem command may be in flight), hang up, the gesture, the settle.
+constexpr uint32_t kPowerOffBudgetMs = 10000;
+static_assert(kPowerOffBudgetMs >= kPowerOffHoldMs + kPowerOffSettleMs + 2000,
+              "restart budget must cover the power-off sequence");
 
 enum class AtResult { Pending, Ok, Error };
 

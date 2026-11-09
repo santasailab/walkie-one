@@ -129,6 +129,14 @@ issuer, which may differ from the roaming network. Never paste a SIM identifier
 or a private serial/NVS dump into chat. Verify registration, PPP, DNS, TLS and
 authenticated WebSocket separately; an AT response is not an internet connection.
 
+The modem's supply is never cut while it runs. Before `CELL STOP`, a
+settings change, a restart of the data session, switching off or any other
+firmware restart, the worker ends the session, holds PWRKEY for the module's
+power-off gesture (2.6 s) and waits 3 s for it to shut down, then removes
+the supply. A restart waits up to 10 s for that to finish, so switching off
+takes a few seconds longer than the sound suggests. The 3 s settle time is a
+placeholder: PCB06 has no STATUS line, so it awaits a measurement on hardware.
+
 Once started, the modem is retried without an attempt limit. A failed attempt
 powers the radio down, then waits 5, 15 and 30 seconds, doubling up to five
 minutes between later attempts. A data session held for 30 seconds starts the

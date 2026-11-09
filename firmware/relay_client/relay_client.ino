@@ -98,6 +98,7 @@ extern "C" bool verifyRollbackLater() { return true; }
 
 #ifdef RELAY_CELLULAR
 #include "cellular.h"
+#include "cellular_policy.h"  // the power-off budget a restart waits for
 #ifdef RELAY_BOARD_06
 // tools/build_pcb06.py --version sets the release version; hello reports it.
 #ifndef RELAY_FW_SEMVER
@@ -521,6 +522,7 @@ static void buttonsCommand(String args) {
   }
   Serial.println("[buttons] saved; restarting");
   Serial.flush();
+  modemOffForRestart();
   ESP.restart();
 }
 
@@ -2423,9 +2425,22 @@ static void ledService() {
 // unplayed replies in the cloud mailbox. The switched-off runtime starts only
 // the light and Listen, then light-sleeps; the battery stays connected (about
 // 1-2 mA), so this is not a storage power-off.
+// setup() latches the modem supply low within milliseconds of a restart.
+// Ask the cellular worker to power the module down in order first, and give
+// it a bounded wait; with the modem already off this returns at once.
+static void modemOffForRestart() {
+#ifdef RELAY_CELLULAR
+  cellularShutdown();
+  const uint32_t start = millis();
+  while (!cellularPoweredDown() && millis() - start < cellular_policy::kPowerOffBudgetMs) delay(50);
+  if (!cellularPoweredDown()) Serial.println("[cell] power-off did not finish in time");
+#endif
+}
+
 static void restartInto(bool off) {
   softOffMarker = off ? kSoftOffMarker : 0;
   Serial.printf("[power] %s - restarting\n", off ? "soft off" : "on");
+  modemOffForRestart();
   esp_restart();
 }
 

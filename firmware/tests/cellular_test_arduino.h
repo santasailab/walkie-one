@@ -53,6 +53,8 @@ inline std::vector<std::pair<uint32_t, int>> baudChanges;
 inline std::function<void()> onData, onDelay;
 inline std::vector<uint8_t> stored;
 inline unsigned putCalls = 0;
+struct PinEvent { uint32_t at; int pin, level; };
+inline std::vector<PinEvent> pinEvents;
 }
 
 constexpr int LOW = 0, HIGH = 1, INPUT = 0, OUTPUT = 1, SERIAL_8N1 = 0;
@@ -63,7 +65,11 @@ constexpr int portMUX_INITIALIZER_UNLOCKED = 0, pdPASS = 1;
 #define portEXIT_CRITICAL(lock) ((void)(lock))
 #define pdMS_TO_TICKS(ms) (ms)
 inline uint32_t millis() { return fake_cell::now; }
-inline void digitalWrite(int p, int v) { assert(p >= 0 && p < 49); fake_cell::pins[p] = v; }
+inline void digitalWrite(int p, int v) {
+  assert(p >= 0 && p < 49);
+  if (fake_cell::pins[p] != v) fake_cell::pinEvents.push_back({fake_cell::now, p, v});
+  fake_cell::pins[p] = v;
+}
 inline void pinMode(int, int) {}
 inline void vTaskDelay(uint32_t ms) {
   fake_cell::now += ms;

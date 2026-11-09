@@ -20,7 +20,8 @@ constexpr uint32_t kReadyMs = 20000, kRegisterMs = 90000, kIpMs = 30000;
 constexpr uint32_t kOffMs = 3000;
 enum class State {
   Off, Starting, Sim, Baud, Registering, Dialing, Online, Backoff,
-  StorageError, NoAt, SimLocked, ApnError, BaudError, AttachError, PppError, Restarting
+  StorageError, NoAt, SimLocked, ApnError, BaudError, AttachError, PppError, Restarting,
+  ShutDown
 };
 
 portMUX_TYPE configLock = portMUX_INITIALIZER_UNLOCKED;
@@ -29,7 +30,8 @@ uint32_t desiredGeneration = 1;
 uint32_t storedGeneration = 0;  // the generation setup read from storage
 TaskHandle_t workerTask = nullptr;
 std::atomic<State> state{State::Off};
-std::atomic<bool> dataUp{false}, restartRequested{false};
+std::atomic<bool> dataUp{false}, restartRequested{false}, shutdownRequested{false};
+std::atomic<bool> supplyLive{false};
 std::atomic<int> cachedRssi{-1}, negotiatedBaud{0};
 std::atomic<int> advertisedBaud{0};
 std::atomic<int> probeBaud{0};
@@ -59,6 +61,7 @@ const char *stateName(State value) {
     case State::AttachError: return "network attachment timeout";
     case State::PppError: return "PPP failed or disconnected";
     case State::Restarting: return "restart requested; data session ended";
+    case State::ShutDown: return "powered down for switch-off";
   }
   return "unknown";
 }
@@ -75,11 +78,11 @@ bool wanted(uint32_t generation) {
   portENTER_CRITICAL(&configLock);
   const bool value = desired.enabled && generation == desiredGeneration;
   portEXIT_CRITICAL(&configLock);
-  return value;
+  return value && !shutdownRequested.load();
 }
 
-// A STOP/configuration change may cut power immediately, even while an esp_modem
-// command finishes its bounded timeout. Only the worker touches UART or PPP.
+// Only the worker touches UART, PPP or the modem's pins. A STOP/configuration
+// change is noticed by the worker, which then shuts the modem down in order.
 void pinsOff() {
   digitalWrite(kKey, LOW);
   digitalWrite(kSupply, LOW);
@@ -87,6 +90,7 @@ void pinsOff() {
   digitalWrite(kUsbBoot, LOW);
   digitalWrite(kDtr, LOW);
   digitalWrite(kMux, LOW);
+  supplyLive.store(false);
 }
 
 bool powerPin(int pin, int level, uint32_t generation) {
@@ -94,7 +98,19 @@ bool powerPin(int pin, int level, uint32_t generation) {
   const bool allow = desired.enabled && generation == desiredGeneration;
   if (allow) digitalWrite(pin, level);
   portEXIT_CRITICAL(&configLock);
+  if (allow && pin == kSupply) supplyLive.store(level == HIGH);
   return allow;
+}
+
+// Removing the supply from a running module risks its flash and the SIM.
+// The PWRKEY gesture works in AT and data mode alike and needs no reply, so
+// it is used whatever state the UART is in. This wait is unconditional: a
+// STOP must not cut it short.
+void powerOffModem() {
+  digitalWrite(kKey, HIGH);
+  vTaskDelay(pdMS_TO_TICKS(cellular_policy::kPowerOffHoldMs));
+  digitalWrite(kKey, LOW);
+  vTaskDelay(pdMS_TO_TICKS(cellular_policy::kPowerOffSettleMs));
 }
 
 bool waitFor(uint32_t duration, uint32_t generation) {
@@ -108,9 +124,10 @@ bool waitFor(uint32_t duration, uint32_t generation) {
 
 void cleanup() {
   dataUp.store(false);
+  if (pppOpen) { PPP.end(); pppOpen = false; }
+  if (supplyLive.load()) powerOffModem();
   pinsOff();
   lastSupplyOff = millis();
-  if (pppOpen) { PPP.end(); pppOpen = false; }
   if (rawOpen) { modemUart.end(); rawOpen = false; }
   pinMode(kTx, INPUT);
   pinMode(kRx, INPUT);
@@ -345,6 +362,11 @@ void worker(void *) {
       vTaskDelay(pdMS_TO_TICKS(50));
       continue;
     }
+    if (shutdownRequested.load()) {  // switching off: down until the restart
+      state.store(State::ShutDown);
+      vTaskDelay(pdMS_TO_TICKS(50));
+      continue;
+    }
     if (attempts < UINT_MAX) ++attempts;
     attemptCount.store(attempts);
     // A request left over from an earlier session is forgotten here, before
@@ -369,11 +391,12 @@ void worker(void *) {
   }
 }
 
+// The session is over for callers at once; the worker notices the new
+// generation and powers the module down in order before touching its pins.
 void queueConfig(const Config &config) {
   portENTER_CRITICAL(&configLock);
   desired = config;
   ++desiredGeneration;
-  pinsOff();
   dataUp.store(false);
   portEXIT_CRITICAL(&configLock);
 }
@@ -415,6 +438,8 @@ void cellularService() {
 
 bool cellularConnected() { return dataUp.load(); }
 void cellularRestart() { restartRequested.store(true); }
+void cellularShutdown() { shutdownRequested.store(true); dataUp.store(false); }
+bool cellularPoweredDown() { return !supplyLive.load(); }
 
 // Runs on from the last reading. After 49 days without a new session millis()
 // wraps and this falls behind; the caller never moves its clock backward.
@@ -586,6 +611,8 @@ bool cellularConnected() {
 
 // The USB-modem prototype's session is owned by its host driver.
 void cellularRestart() {}
+void cellularShutdown() {}
+bool cellularPoweredDown() { return true; }
 bool cellularNetworkTime(int64_t &) { return false; }
 
 int cellularRssiDbm() {
