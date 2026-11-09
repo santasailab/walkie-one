@@ -11,15 +11,18 @@ constexpr int64_t kBuildSlackS = 3 * 86400;         // build stamp has no time z
 constexpr int64_t kBuildHorizonS = 10LL * 365 * 86400;  // an image's believable life
 
 // Returns the time to set, or 0 to leave the clock alone. `network` is 0 when
-// unknown. The clock only ever moves forward here: a synchronized clock is
-// never an hour behind the network, but one seeded from the build stamp is.
-// Once SNTP has answered it owns a set clock; the modem's time may be wrong
-// yet plausible, and must not undo SNTP before every dial.
+// unknown. A set clock that disagrees with the network by more than the step
+// is replaced in either direction: one seeded from the build stamp runs
+// behind, and one mis-seeded earlier, or drifted through soft-off, runs
+// ahead; a synchronized clock does neither. Once SNTP has answered it owns a
+// set clock; the modem's time may be wrong yet plausible, and must not undo
+// SNTP before every dial.
 inline int64_t clockSeed(int64_t current, int64_t build, int64_t network, bool sntpSynced) {
   const bool unset = current < kClockUnsetBeforeS;
   if (sntpSynced && !unset) return 0;
   const bool networkPlausible = network && network >= build - kBuildSlackS &&
                                 network <= build + kBuildHorizonS;
-  if (networkPlausible && (unset || network > current + kClockStepS)) return network;
+  const int64_t error = network > current ? network - current : current - network;
+  if (networkPlausible && (unset || error > kClockStepS)) return network;
   return unset ? build : 0;
 }

@@ -54,7 +54,10 @@ network's time when the modem reports one, lets SNTP correct it when reachable,
 and falls back to the image's build date. The SIM7672G reports that time in
 UTC with the network's zone appended; the firmware uses the digits as UTC and
 ignores the zone, so a modem that reports local time instead would be off by
-that zone until SNTP answers. That fallback stops working once the
+that zone until SNTP answers. A clock more than an hour away from the
+network's time in either direction is replaced by it before each dial until
+SNTP has answered, so a wrong earlier seed does not outlive the soft-off
+sleep that keeps the clock running. That fallback stops working once the
 build is older than your server's current certificate, so do not rely on it:
 check that your SIM's network supplies time, or that SNTP is reachable.
 

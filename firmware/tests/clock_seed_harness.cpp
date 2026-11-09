@@ -20,8 +20,13 @@ int main() {
   assert(clockSeed(real, build, real, false) == 0);
   assert(clockSeed(real, build, real + kClockStepS, false) == 0);
   assert(clockSeed(real, build, real + kClockStepS + 1, false) == real + kClockStepS + 1);
-  // The clock is never moved backward: SNTP owns small corrections.
-  assert(clockSeed(real + 86400, build, real, false) == 0);
+  // A clock that runs ahead of the network by more than the step is just as
+  // wrong as one behind it (a mis-seeded device, or a drifted RTC through
+  // soft-off), and SNTP has not spoken yet: the network wins either way.
+  assert(clockSeed(real + 86400, build, real, false) == real);
+  assert(clockSeed(real + 8 * 3600, build, real, false) == real);
+  assert(clockSeed(real + kClockStepS, build, real, false) == 0);
+  assert(clockSeed(real + kClockStepS + 1, build, real, false) == real);
   assert(clockSeed(real, build, 0, false) == 0);
 
   // Once SNTP has answered it owns the clock. A modem clock that is wrong
