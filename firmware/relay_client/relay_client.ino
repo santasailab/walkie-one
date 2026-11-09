@@ -1343,6 +1343,8 @@ static bool wsConnect() {
     return false;
   }
   wsReachedRelay = true;
+  time_t verifiedAt = time(nullptr);
+  Serial.printf("[ws] clock is %s", ctime(&verifiedAt));  // the time the certificate passed at
   uint8_t rnd[16];
   for (int i = 0; i < 16; i++) rnd[i] = (uint8_t)esp_random();
   unsigned char key[32];

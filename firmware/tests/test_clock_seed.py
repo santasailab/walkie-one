@@ -9,7 +9,7 @@ FIRMWARE = pathlib.Path(__file__).parents[1]
 
 
 class ClockSeedTests(unittest.TestCase):
-    def test_network_time_beats_the_build_stamp_and_never_moves_backward(self):
+    def test_network_time_beats_the_build_stamp_and_a_clock_an_hour_off(self):
         with tempfile.TemporaryDirectory() as temporary:
             executable = pathlib.Path(temporary) / "clock-seed-test"
             built = subprocess.run(
@@ -51,6 +51,19 @@ class ClockSeedTests(unittest.TestCase):
         self.assertLess(
             once.index("sntp_set_time_sync_notification_cb("), once.index("configTime(")
         )
+
+    def test_the_clock_is_logged_whether_or_not_tls_came_up(self):
+        # A serial log of a working device must show the clock TLS used, not
+        # only the clock of a failed handshake, or a wrong seed stays invisible.
+        connect = function(
+            (FIRMWARE / "relay_client/relay_client.ino").read_text(), "wsConnect"
+        )
+        failed = connect[
+            connect.index("if (!up) {") : connect.index("wsReachedRelay = true;")
+        ]
+        succeeded = connect[connect.index("wsReachedRelay = true;") :]
+        self.assertIn('"[ws] clock is %s"', failed)
+        self.assertIn('"[ws] clock is %s"', succeeded)
 
 
 if __name__ == "__main__":
