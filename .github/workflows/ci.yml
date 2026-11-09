@@ -65,14 +65,59 @@ jobs:
           tar -xzf "$archive" -C "$RUNNER_TEMP" gitleaks
           PATH="$RUNNER_TEMP:$PATH" ./scripts/security.sh
 
+  firmware:
+    # The host suite cannot see Arduino compile errors (auto-generated
+    # prototypes, core API changes); only the target build can.
+    name: PCB06 target build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ARDUINO_CLI_VERSION: '1.5.1'
+      ARDUINO_CLI_SHA256: '28a8e119c498a25607821c36cb2dc49e8463941b261a0d99091baa7bc692dd2b'
+      ESP32_CORE_VERSION: '3.3.11'
+      ESP32_INDEX_URL: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: ./scripts/setup.sh
+      - name: Cache the Arduino ESP32 core and toolchains
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.arduino15
+          key: arduino15-esp32-${{ env.ESP32_CORE_VERSION }}-cli-${{ env.ARDUINO_CLI_VERSION }}
+      - name: Install Arduino CLI and the exact ESP32 core
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/arduino-cli.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/arduino/arduino-cli/releases/download/v${ARDUINO_CLI_VERSION}/arduino-cli_${ARDUINO_CLI_VERSION}_Linux_64bit.tar.gz" \
+            --output "$archive"
+          echo "$ARDUINO_CLI_SHA256  $archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP" arduino-cli
+          PATH="$RUNNER_TEMP:$PATH"
+          arduino-cli core update-index --additional-urls "$ESP32_INDEX_URL"
+          arduino-cli core install "esp32:esp32@${ESP32_CORE_VERSION}" --additional-urls "$ESP32_INDEX_URL"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Build the PCB06 application (placeholder hostname, unsigned)
+        run: .venv/bin/python firmware/tools/build_pcb06.py --output "$RUNNER_TEMP/pcb06"
+      - name: Show the build manifest
+        run: .venv/bin/python -c 'import json,sys; m=json.load(open(sys.argv[1])); print(m["status"]); [print(c["offset"], c["size"], c["path"]) for c in m["components"]]' "$RUNNER_TEMP/pcb06/manifest.json"
+
   required:
     name: Required checks
     if: always()
-    needs: [software, security]
+    needs: [software, security, firmware]
     runs-on: ubuntu-latest
     steps:
       - name: Require every check
         env:
           SOFTWARE_RESULT: ${{ needs.software.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
-        run: test "$SOFTWARE_RESULT" = success && test "$SECURITY_RESULT" = success
+          FIRMWARE_RESULT: ${{ needs.firmware.result }}
+        run: test "$SOFTWARE_RESULT" = success && test "$SECURITY_RESULT" = success && test "$FIRMWARE_RESULT" = success

@@ -195,6 +195,12 @@ credential, transfer ownership, or provide company hosting.
 .venv/bin/python firmware/tools/build_pcb06.py
 ```
 
+Continuous integration runs the same three commands' public parts: the host
+suite, the security scan, and the PCB06 target build with the placeholder
+hostname (Arduino CLI 1.5.1, core 3.3.11, checksummed downloads). The target
+build catches what the host suite cannot, such as an auto-generated prototype
+placed before its type's include; it proves nothing about hardware.
+
 The host suite covers capture/release under stalled transport, PCM saturation,
 button gestures, LEDs, playback receipts, reconnects, modem startup, signed
 restore verification and MP3 decoding with address/undefined-behavior sanitizers.
