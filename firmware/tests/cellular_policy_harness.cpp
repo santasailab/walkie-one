@@ -53,9 +53,12 @@ int main() {
   assert(signalDbm("+CSQ: 99,99") == -1);
   assert(signalDbm("ERROR") == -1);
 
-  // Network time is local with a quarter-hour offset; the result is UTC.
-  assert(networkTimeUtc("\r\n+CCLK: \"26/11/06,12:00:00-32\"\r\n\r\nOK\r\n") == 1793995200);
-  assert(networkTimeUtc("+CCLK: \"27/01/01,02:30:00+08\"") == 1798763400);
+  // The SIM7672G reports the digits in UTC; the quarter-hour zone describes
+  // the local time and must not be applied. Measured on PCB06 on a US Pacific
+  // network: digits 19:16:24 at 19:16 UTC with zone -32.
+  assert(networkTimeUtc("\r\n+CCLK: \"26/11/06,12:00:00-32\"\r\n\r\nOK\r\n") == 1793966400);
+  assert(networkTimeUtc("+CCLK: \"26/11/09,19:16:24-32\"") == 1794251784);
+  assert(networkTimeUtc("+CCLK: \"27/01/01,02:30:00+08\"") == 1798770600);
   assert(networkTimeUtc("+CCLK: \"24/02/29,23:59:59+00\"") == 1709251199);
   assert(networkTimeUtc("+CCLK: \"69/12/31,23:59:59+00\"") == 3155759999);
   // A modem that has not heard the network reports its 1970/1980 default.

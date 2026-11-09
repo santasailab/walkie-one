@@ -125,11 +125,11 @@ int main() {
   fake_cell::modemBaud = 115200;
   ceiling = 921600;
   assert(connectAttempt(config, generation, ceiling));
-  assert(cellularNetworkTime(networkTime) && networkTime == 1793995200);
+  assert(cellularNetworkTime(networkTime) && networkTime == 1793966400);
   fake_cell::now += 90500;
-  assert(cellularNetworkTime(networkTime) && networkTime == 1793995200 + 90);
+  assert(cellularNetworkTime(networkTime) && networkTime == 1793966400 + 90);
   cleanup();
-  assert(cellularNetworkTime(networkTime) && networkTime == 1793995200 + 90);
+  assert(cellularNetworkTime(networkTime) && networkTime == 1793966400 + 90);
 
   // A failed modem profile write cannot reach PPP or attempt a data session.
   resetDriver();

@@ -149,8 +149,10 @@ inline int64_t networkTimeUtc(const char *response) {
   // Days from 1970-01-01, proleptic Gregorian.
   const int y = year - (month <= 2), m = month + (month > 2 ? -3 : 9);
   const int64_t days = 365LL * y + y / 4 - y / 100 + y / 400 + (153 * m + 2) / 5 + day - 1 - 719468;
-  const int64_t local = days * 86400 + field[3] * 3600 + field[4] * 60 + field[5];
-  return local - (west ? -quarters : quarters) * 900;
+  // The SIM7672G keeps the digits in UTC and appends the network's local zone
+  // (measured on PCB06: 19:16 UTC reported as "19:16:24-32" on a US Pacific
+  // network), unlike 3GPP's local-time form. The zone is checked, not applied.
+  return days * 86400 + field[3] * 3600 + field[4] * 60 + field[5];
 }
 
 inline uint32_t retryDelayMs(unsigned attempts) {
