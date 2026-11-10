@@ -20,6 +20,7 @@
  */
 
 #include <Arduino.h>
+#include <atomic>
 #include <Network.h>
 #include <NetworkClient.h>
 #include <WiFi.h>
@@ -49,7 +50,6 @@
 #include "power_status.h"
 static PowerStatus board06Power;
 static BatteryWatch batteryWatch;
-#include <atomic>
 #include "pcb06_capture_spool.h"
 #include "pcb06_button_cues.h"
 #include "pcb06_button_sounds.h"
