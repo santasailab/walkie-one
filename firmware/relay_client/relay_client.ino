@@ -404,6 +404,8 @@ static bool networkConnected();
 static void networkService();
 static void abandonPlayback();
 static void retryPlayback();
+// ESP-IDF includes this sketch as C++ without Arduino-generated prototypes.
+static void modemOffForRestart();
 
 // ESP-IDF only promises true randomness from esp_random() while Wi-Fi or
 // Bluetooth RF is on; the cellular-only 06 board never turns either on, so the
