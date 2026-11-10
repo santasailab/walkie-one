@@ -16,6 +16,8 @@ class Pcb06CaptureIntegrationTests(unittest.TestCase):
         functions = "\n".join(
             function(sketch, name)
             for name in (
+                "museBlocksTalk",
+                "board06TalkRefused",
                 "board06ObservePtt",
                 "board06PlayPttChunk",
                 "board06PlayCueChunk",

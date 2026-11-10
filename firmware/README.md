@@ -43,11 +43,29 @@ firmware connects with WSS on port 443. Never put a credential, Wi-Fi password,
 provider key or private TLS key in that file. This placeholder cannot connect
 to the company service by accident.
 
-The included trust anchor is the public ISRG Root X2 certificate. Your server's
-TLS chain must validate against it. If your server uses another CA, replace
-`RELAY_CA` in `relay_client.ino` with the appropriate **public CA certificate**
-and rebuild. Keep `tls.setCACert` and hostname verification enabled; do not use
+The included trust anchors are the public ISRG Root X2 and ISRG Root X1
+certificates. Your server's TLS chain must validate against one of them. If
+your server uses another CA, replace `RELAY_CA` in `relay_client.ino` with the
+appropriate **public CA certificate** and rebuild. Keep `tls.setCACert` and hostname verification enabled; do not use
 `setInsecure`. Test your public WSS route before installing a device build.
+
+Certificate validation needs a clock. The firmware can seed its clock from a
+plausible modem `AT+CCLK?` reading, lets SNTP correct it when reachable,
+and falls back to the image's build date. Automatic modem time updates stay
+disabled (`AT+CTZU=0`): enabling them caused repeated internal flash-write
+crashes on an inspected SIM7672G B05. Startup reads that persistent setting,
+changes it only when needed and verifies the result before enabling the radio.
+A modem with no valid clock leaves the ESP32 dependent on SNTP or the build
+fallback. The SIM7672G reports its time in
+UTC with the network's zone appended; the firmware uses the digits as UTC and
+ignores the zone, so a modem that reports local time instead would be off by
+that zone until SNTP answers. A clock more than an hour away from the
+network's time in either direction is replaced by it before each dial until
+SNTP has answered, so a wrong earlier seed does not outlive the soft-off
+sleep that keeps the clock running. That fallback stops working once the
+build is older than your server's current certificate, so do not rely on it:
+check that SNTP is reachable or the modem already has valid time. The firmware
+never enables automatic modem time updates to obtain it.
 
 Run `build_pcb06.py --help` for output and version options. Do not pass
 `--official` for personal builds. That option and `release.py` exist for release
@@ -108,11 +126,62 @@ your selected server decides whether it is authorized. A personal-server
 credential grants no access to the company service. Close other serial clients
 before provisioning. Opening serial may reset the board.
 
-In a local 115200-baud serial terminal, while idle, use `CELL STOP`,
+Add `--apn <your-provider-apn>` to store the mobile data APN and start the
+modem in the same run, or `--apn <value> --keep-credential` to change only
+those settings. The tool sends the same console commands you can type in a
+local 115200-baud serial terminal while idle: `CELL STOP`,
 `CELL APN <your-provider-apn>`, then `CELL START`. The APN belongs to the SIM
 issuer, which may differ from the roaming network. Never paste a SIM identifier
 or a private serial/NVS dump into chat. Verify registration, PPP, DNS, TLS and
 authenticated WebSocket separately; an AT response is not an internet connection.
+
+The modem's supply is never cut while it runs. Before `CELL STOP`, a
+settings change, a restart of the data session, switching off or any other
+firmware restart, the worker ends the session, holds PWRKEY for the module's
+power-off gesture (2.6 s) and waits 3 s for it to shut down, then removes
+the supply. A restart waits up to 10 s for that to finish, so switching off
+takes a few seconds longer than the sound suggests. The 3 s settle time is a
+placeholder: PCB06 has no STATUS line, so it awaits a measurement on hardware.
+
+Once started, the modem is retried without an attempt limit. A failed attempt
+powers the radio down, then waits 5, 15 and 30 seconds, doubling up to five
+minutes between later attempts. A data session held for 30 seconds starts the
+sequence again. `CELL STOP` is the only thing that ends the retries.
+
+A data session can report an address while nothing crosses it. When dials
+never reach your server, or an open connection goes silent, at least three
+times over three minutes while the modem reports data, the firmware
+power-cycles the modem and dials again. Each restart that does not help
+doubles that period, up to an hour, so a server outage does not keep cycling
+the radio. Any answer from the server resets it, including a refusal or a
+certificate the Device rejects: neither is the modem's fault.
+
+The server connection allows 15 seconds for the TCP connect and for a write
+that stops making progress, then closes and redials. An upload that keeps
+moving is not cut off, unless a single frame takes more than 30 seconds. The
+server has 20 seconds to finish its WebSocket upgrade response.
+
+A start on an empty battery without USB power (3 % or less, or under 3.60 V at
+rest) does not power the modem. The Device stays switched off, as it does at
+the same level while running, until it is charged and switched on again. An
+unreadable gauge does not block a start. The voltage floor is still a
+placeholder awaiting a measured brownout point on real hardware.
+
+The gauge can read healthy while the battery sags under the modem. Three
+brownout restarts in a row, with less than five minutes of running between
+them, also end switched off. Switching on again is a fresh attempt.
+
+The volume you choose is saved three seconds after the last change and
+restored at the next start, including after switching off and on. It is
+never written during Talk or playback.
+
+The serial log prints why each boot happened (`[boot] cause=...`), and the
+3-second `[stat]` line includes the lowest free heap since boot. A restart
+after a crash, watchdog or brownout comes back without the boot chirp.
+
+The Talk opening sound means the microphone is open. A press made while the
+server is unreachable, or while the previous request is still uploading,
+cannot be recorded and stays silent from press to release.
 
 ## Restore official firmware
 
@@ -139,6 +208,12 @@ credential, transfer ownership, or provide company hosting.
 ./scripts/security.sh
 .venv/bin/python firmware/tools/build_pcb06.py
 ```
+
+Continuous integration runs the same three commands' public parts: the host
+suite, the security scan, and the PCB06 target build with the placeholder
+hostname (Arduino CLI 1.5.1, core 3.3.11, checksummed download, no cache). The target
+build catches what the host suite cannot, such as an auto-generated prototype
+placed before its type's include; it proves nothing about hardware.
 
 The host suite covers capture/release under stalled transport, PCM saturation,
 button gestures, LEDs, playback receipts, reconnects, modem startup, signed

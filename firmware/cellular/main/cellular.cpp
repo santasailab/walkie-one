@@ -9,6 +9,7 @@
 #include <PPP.h>
 #include <Preferences.h>
 #include <atomic>
+#include <climits>
 
 namespace {
 
@@ -19,15 +20,18 @@ constexpr uint32_t kReadyMs = 20000, kRegisterMs = 90000, kIpMs = 30000;
 constexpr uint32_t kOffMs = 3000;
 enum class State {
   Off, Starting, Sim, Baud, Registering, Dialing, Online, Backoff,
-  Exhausted, StorageError, NoAt, SimLocked, ApnError, BaudError, AttachError, PppError
+  StorageError, NoAt, SimLocked, NetworkTimeError, ApnError, BaudError, AttachError,
+  PppError, Restarting, ShutDown
 };
 
 portMUX_TYPE configLock = portMUX_INITIALIZER_UNLOCKED;
 Config desired = cellular_policy::emptyConfig();
 uint32_t desiredGeneration = 1;
+uint32_t storedGeneration = 0;  // the generation setup read from storage
 TaskHandle_t workerTask = nullptr;
 std::atomic<State> state{State::Off};
-std::atomic<bool> dataUp{false};
+std::atomic<bool> dataUp{false}, restartRequested{false}, shutdownRequested{false};
+std::atomic<bool> supplyLive{false};
 std::atomic<int> cachedRssi{-1}, negotiatedBaud{0};
 std::atomic<int> advertisedBaud{0};
 std::atomic<int> probeBaud{0};
@@ -36,6 +40,8 @@ std::atomic<unsigned> attemptCount{0};
 HardwareSerial modemUart(1);
 bool rawOpen = false, pppOpen = false, initialized = false;
 uint32_t lastSupplyOff = 0;
+int64_t networkUtc = 0;      // protected by configLock, with networkUtcAt
+uint32_t networkUtcAt = 0;
 
 const char *stateName(State value) {
   switch (value) {
@@ -47,14 +53,16 @@ const char *stateName(State value) {
     case State::Dialing: return "waiting for PPP address";
     case State::Online: return "PPP data up";
     case State::Backoff: return "retry wait";
-    case State::Exhausted: return "attempt limit reached; CELL START retries";
     case State::StorageError: return "configuration could not be saved; radio off";
     case State::NoAt: return "no AT response";
     case State::SimLocked: return "SIM missing, locked or not ready";
+    case State::NetworkTimeError: return "modem network-time update could not be disabled";
     case State::ApnError: return "modem rejected mobile data profile";
     case State::BaudError: return "UART capability or speed verification failed";
     case State::AttachError: return "network attachment timeout";
     case State::PppError: return "PPP failed or disconnected";
+    case State::Restarting: return "restart requested; data session ended";
+    case State::ShutDown: return "powered down for switch-off";
   }
   return "unknown";
 }
@@ -71,11 +79,11 @@ bool wanted(uint32_t generation) {
   portENTER_CRITICAL(&configLock);
   const bool value = desired.enabled && generation == desiredGeneration;
   portEXIT_CRITICAL(&configLock);
-  return value;
+  return value && !shutdownRequested.load();
 }
 
-// A STOP/configuration change may cut power immediately, even while an esp_modem
-// command finishes its bounded timeout. Only the worker touches UART or PPP.
+// Only the worker touches UART, PPP or the modem's pins. A STOP/configuration
+// change is noticed by the worker, which then shuts the modem down in order.
 void pinsOff() {
   digitalWrite(kKey, LOW);
   digitalWrite(kSupply, LOW);
@@ -83,14 +91,32 @@ void pinsOff() {
   digitalWrite(kUsbBoot, LOW);
   digitalWrite(kDtr, LOW);
   digitalWrite(kMux, LOW);
+  supplyLive.store(false);
 }
 
 bool powerPin(int pin, int level, uint32_t generation) {
   portENTER_CRITICAL(&configLock);
-  const bool allow = desired.enabled && generation == desiredGeneration;
-  if (allow) digitalWrite(pin, level);
+  // Serialize supply-on with shutdown: once the caller observes powered-down,
+  // this worker must not energize the modem after shutdown reports completion.
+  const bool allow = desired.enabled && generation == desiredGeneration &&
+                     !shutdownRequested.load();
+  if (allow) {
+    digitalWrite(pin, level);
+    if (pin == kSupply) supplyLive.store(level == HIGH);
+  }
   portEXIT_CRITICAL(&configLock);
   return allow;
+}
+
+// Removing the supply from a running module risks its flash and the SIM.
+// The PWRKEY gesture works in AT and data mode alike and needs no reply, so
+// it is used whatever state the UART is in. This wait is unconditional: a
+// STOP must not cut it short.
+void powerOffModem() {
+  digitalWrite(kKey, HIGH);
+  vTaskDelay(pdMS_TO_TICKS(cellular_policy::kPowerOffHoldMs));
+  digitalWrite(kKey, LOW);
+  vTaskDelay(pdMS_TO_TICKS(cellular_policy::kPowerOffSettleMs));
 }
 
 bool waitFor(uint32_t duration, uint32_t generation) {
@@ -104,9 +130,10 @@ bool waitFor(uint32_t duration, uint32_t generation) {
 
 void cleanup() {
   dataUp.store(false);
+  if (pppOpen) { PPP.end(); pppOpen = false; }
+  if (supplyLive.load()) powerOffModem();
   pinsOff();
   lastSupplyOff = millis();
-  if (pppOpen) { PPP.end(); pppOpen = false; }
   if (rawOpen) { modemUart.end(); rawOpen = false; }
   pinMode(kTx, INPUT);
   pinMode(kRx, INPUT);
@@ -170,6 +197,17 @@ int discoverBaud(uint32_t generation) {
   return 0;
 }
 
+bool disableNetworkTimeUpdates(uint32_t generation) {
+  String response;
+  if (!rawAt("AT+CTZU?", response, 5000, generation)) return false;
+  const int mode = cellular_policy::taggedNumber(response.c_str(), "+CTZU:");
+  if (mode == 0) return true;
+  // CTZU is persistent. Read first to avoid rewriting a repaired modem's flash.
+  if (mode < 0 || !rawAt("AT+CTZU=0", response, 5000, generation)) return false;
+  return rawAt("AT+CTZU?", response, 5000, generation) &&
+         cellular_policy::taggedNumber(response.c_str(), "+CTZU:") == 0;
+}
+
 bool commandAt(const char *command, String &response, uint32_t generation,
                int timeout = 1000) {
   // Never query signal, attachment, identities or any AT command in DATA mode.
@@ -206,8 +244,16 @@ bool connectAttempt(const Config &config, uint32_t generation, int &baudCeiling)
   // prepares a later dial, so apply the selected APN before enabling the radio.
   char profileCommand[cellular_policy::kMaxApn + 40];
   snprintf(profileCommand, sizeof(profileCommand), "AT+CGDCONT=1,\"IP\",\"%s\"", config.apn);
-  if (!rawAt("AT+CFUN=4", response, 25000, generation) ||
-      !rawAt(profileCommand, response, 5000, generation) ||
+  if (!rawAt("AT+CFUN=4", response, 25000, generation)) {
+    state.store(State::ApnError); return false;
+  }
+  // Network time updates can trigger a SIM7672 flash-write assertion on attach.
+  // Keep automatic updates disabled; a readable modem clock is only a best-effort
+  // seed for the ESP32, which synchronizes independently through SNTP.
+  if (!disableNetworkTimeUpdates(generation)) {
+    state.store(State::NetworkTimeError); return false;
+  }
+  if (!rawAt(profileCommand, response, 5000, generation) ||
       !rawAt("AT+CFUN=1", response, 25000, generation)) {
     state.store(State::ApnError); return false;
   }
@@ -263,6 +309,19 @@ bool connectAttempt(const Config &config, uint32_t generation, int &baudCeiling)
   if (!attached) { state.store(State::AttachError); return false; }
   if (commandAt("AT+CSQ", response, generation))
     cachedRssi.store(cellular_policy::signalDbm(response.c_str()));
+  // Read the modem clock when available without enabling automatic network
+  // updates. Its default/unset value leaves TLS to SNTP and the build stamp.
+  for (int look = 0; look < 3; ++look) {
+    if (look && !waitFor(500, generation)) return false;
+    if (!commandAt("AT+CCLK?", response, generation)) break;
+    const int64_t utc = cellular_policy::networkTimeUtc(response.c_str());
+    if (!utc) continue;
+    portENTER_CRITICAL(&configLock);
+    networkUtc = utc;
+    networkUtcAt = millis();
+    portEXIT_CRITICAL(&configLock);
+    break;
+  }
   if (!wanted(generation)) return false;
   state.store(State::Dialing);
   if (!PPP.mode(ESP_MODEM_MODE_DATA) || !wanted(generation)) {
@@ -276,7 +335,8 @@ bool connectAttempt(const Config &config, uint32_t generation, int &baudCeiling)
     state.store(State::PppError); return false;
   }
   portENTER_CRITICAL(&configLock);
-  const bool stillEnabled = desired.enabled && desiredGeneration == generation;
+  const bool stillEnabled = desired.enabled && desiredGeneration == generation &&
+                            !shutdownRequested.load();
   if (stillEnabled) dataUp.store(true);
   portEXIT_CRITICAL(&configLock);
   if (!stillEnabled) return false;
@@ -309,7 +369,9 @@ void worker(void *) {
       attemptCount.store(0);
       negotiatedBaud.store(0);
       advertisedBaud.store(0);
-      if (!persist(config)) {
+      if (generation == storedGeneration) {
+        state.store(State::Off);  // what setup read from storage is stored already
+      } else if (!persist(config)) {
         config.enabled = false;
         state.store(State::StorageError);
         portENTER_CRITICAL(&configLock);
@@ -320,34 +382,45 @@ void worker(void *) {
         state.store(State::Off);
       }
     }
-    if (!config.enabled || !config.apn[0] || attempts >= cellular_policy::kMaxAttempts) {
+    if (!config.enabled || !config.apn[0]) {
       vTaskDelay(pdMS_TO_TICKS(50));
       continue;
     }
-    attemptCount.store(++attempts);
+    if (shutdownRequested.load()) {  // switching off: down until the restart
+      state.store(State::ShutDown);
+      vTaskDelay(pdMS_TO_TICKS(50));
+      continue;
+    }
+    if (attempts < UINT_MAX) ++attempts;
+    attemptCount.store(attempts);
+    // A request left over from an earlier session is forgotten here, before
+    // this one reports data: one made after that must not be lost.
+    restartRequested.store(false);
     if (connectAttempt(config, activeGeneration, baudCeiling)) {
       const uint32_t connectedAt = millis();
-      while (wanted(activeGeneration) && PPP.hasIP()) vTaskDelay(pdMS_TO_TICKS(50));
+      while (wanted(activeGeneration) && PPP.hasIP() && !restartRequested.load())
+        vTaskDelay(pdMS_TO_TICKS(50));
       if (cellular_policy::expired(millis(), connectedAt, 30000)) attempts = 0;
-      if (wanted(activeGeneration)) state.store(State::PppError);
+      if (wanted(activeGeneration))
+        state.store(restartRequested.exchange(false) ? State::Restarting : State::PppError);
     }
     const State failure = state.load();
     cleanup();
     if (!wanted(activeGeneration)) continue;
-    Serial.printf("[cell] attempt %u: %s\n", attempts, stateName(failure));
-    if (attempts >= cellular_policy::kMaxAttempts) state.store(State::Exhausted);
-    else {
-      state.store(State::Backoff);
-      waitFor(cellular_policy::retryDelayMs(attempts), activeGeneration);
-    }
+    const uint32_t wait = cellular_policy::retryDelayMs(attempts);
+    Serial.printf("[cell] attempt %u: %s; retry in %lu s\n", attempts, stateName(failure),
+                  static_cast<unsigned long>(wait / 1000));
+    state.store(State::Backoff);
+    waitFor(wait, activeGeneration);
   }
 }
 
+// The session is over for callers at once; the worker notices the new
+// generation and powers the module down in order before touching its pins.
 void queueConfig(const Config &config) {
   portENTER_CRITICAL(&configLock);
   desired = config;
   ++desiredGeneration;
-  pinsOff();
   dataUp.store(false);
   portEXIT_CRITICAL(&configLock);
 }
@@ -370,6 +443,7 @@ bool cellularSetup() {
         cellular_policy::validConfig(saved)) desired = saved;
     preferences.end();
   }
+  storedGeneration = desiredGeneration;
   if (!Network.begin()) return false;
   if (xTaskCreate(worker, "cellular", 6144, nullptr, 2, &workerTask) != pdPASS) return false;
   initialized = true;
@@ -378,26 +452,45 @@ bool cellularSetup() {
 }
 
 void cellularService() {
-  static State announced = State::Exhausted;
-  const State current = state.load();
+  static int announced = -1;
+  const int current = static_cast<int>(state.load());
   if (current != announced) {
-    Serial.printf("[cell] %s\n", stateName(current));
+    Serial.printf("[cell] %s\n", stateName(static_cast<State>(current)));
     announced = current;
   }
 }
 
 bool cellularConnected() { return dataUp.load(); }
+void cellularRestart() { restartRequested.store(true); }
+void cellularShutdown() {
+  portENTER_CRITICAL(&configLock);
+  shutdownRequested.store(true);
+  dataUp.store(false);
+  portEXIT_CRITICAL(&configLock);
+}
+bool cellularPoweredDown() { return !supplyLive.load(); }
+
+// Runs on from the last reading. After 49 days without a new session millis()
+// wraps and this falls behind; SNTP remains authoritative once synchronized.
+bool cellularNetworkTime(int64_t &utcSeconds) {
+  portENTER_CRITICAL(&configLock);
+  const int64_t utc = networkUtc;
+  const uint32_t at = networkUtcAt;
+  portEXIT_CRITICAL(&configLock);
+  if (!utc) return false;
+  utcSeconds = utc + static_cast<uint32_t>(millis() - at) / 1000;
+  return true;
+}
 int cellularRssiDbm() { return dataUp.load() ? cachedRssi.load() : -1; }
 
 void cellularPrintStatus() {
   uint32_t generation;
   const Config config = snapshot(generation);
-  Serial.printf("[cell] %s; enabled=%s APN=%s UART=%d advertised-max=%d probe-baud=%d RXbytes=%lu data=%s attempt=%u/%u RSSI=%d (cached before PPP)\n",
+  Serial.printf("[cell] %s; enabled=%s APN=%s UART=%d advertised-max=%d probe-baud=%d RXbytes=%lu data=%s attempt=%u RSSI=%d (cached before PPP)\n",
       stateName(state.load()), config.enabled ? "yes" : "no",
       config.apn[0] ? "configured" : "missing", negotiatedBaud.load(), advertisedBaud.load(),
       probeBaud.load(), static_cast<unsigned long>(receivedBytes.load()),
-      dataUp.load() ? "up" : "down", attemptCount.load(),
-      cellular_policy::kMaxAttempts, cachedRssi.load());
+      dataUp.load() ? "up" : "down", attemptCount.load(), cachedRssi.load());
   if (negotiatedBaud.load() > 0 && negotiatedBaud.load() < 921600)
     Serial.println("[cell] UART below live 24kHz PCM rate; buffered audio required");
 }
@@ -544,6 +637,12 @@ void cellularService() {
 bool cellularConnected() {
   return gotIp;
 }
+
+// The USB-modem prototype's session is owned by its host driver.
+void cellularRestart() {}
+void cellularShutdown() {}
+bool cellularPoweredDown() { return true; }
+bool cellularNetworkTime(int64_t &) { return false; }
 
 int cellularRssiDbm() {
   // CSQ is reported in a modem-specific 0..31 scale. Until that query is

@@ -22,6 +22,12 @@ inline bool batteryEmptyNow(int percent, float volts) {
 inline bool batteryLowNow(int percent, float volts) {
   return percent <= kBatteryLowPercent || volts < kBatteryLowVolts;
 }
+// Whether a boot may power the modem. An empty battery browns out on the first
+// transmit burst and the restart lands on the same battery. USB carries the
+// load, and an unreadable gauge must never strand a Device that could run.
+inline bool batteryAllowsStart(bool gaugeRead, int percent, float volts, bool usb) {
+  return usb || !gaugeRead || !batteryEmptyNow(percent, volts);
+}
 
 enum class BatteryAlert { None, Low, VeryLow };
 

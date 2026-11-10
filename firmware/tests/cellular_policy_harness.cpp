@@ -53,8 +53,32 @@ int main() {
   assert(signalDbm("+CSQ: 99,99") == -1);
   assert(signalDbm("ERROR") == -1);
 
+  // The SIM7672G reports the digits in UTC; the quarter-hour zone describes
+  // the local time and must not be applied. Measured on PCB06 on a US Pacific
+  // network: digits 19:16:24 at 19:16 UTC with zone -32.
+  assert(networkTimeUtc("\r\n+CCLK: \"26/11/06,12:00:00-32\"\r\n\r\nOK\r\n") == 1793966400);
+  assert(networkTimeUtc("+CCLK: \"26/11/09,19:16:24-32\"") == 1794251784);
+  assert(networkTimeUtc("+CCLK: \"27/01/01,02:30:00+08\"") == 1798770600);
+  assert(networkTimeUtc("+CCLK: \"24/02/29,23:59:59+00\"") == 1709251199);
+  assert(networkTimeUtc("+CCLK: \"69/12/31,23:59:59+00\"") == 3155759999);
+  // A modem that has not heard the network reports its 1970/1980 default.
+  for (const char *unset : {"+CCLK: \"70/01/01,00:00:12+00\"", "+CCLK: \"80/01/06,00:01:40+00\"",
+                            "+CCLK: \"23/12/31,23:59:59+00\"", "+CCLK: \"99/12/31,23:59:59+00\""})
+    assert(networkTimeUtc(unset) == 0);
+  for (const char *bad : {"", "ERROR\r\n", "+CCLK: \"26/11/06,12:00:00\"", "+CCLK: \"26/13/06,12:00:00+00\"",
+                          "+CCLK: \"26/00/06,12:00:00+00\"", "+CCLK: \"26/11/31,12:00:00+00\"",
+                          "+CCLK: \"25/02/29,12:00:00+00\"", "+CCLK: \"26/11/06,24:00:00+00\"",
+                          "+CCLK: \"26/11/06,12:60:00+00\"", "+CCLK: \"26/11/06,12:00:61+00\"",
+                          "+CCLK: \"26/11/06,12:00:00+97\"", "+CCLK: \"26/11/06 12:00:00+00\"",
+                          "+CCLK: \"2x/11/06,12:00:00+00\"", "+CCLK: 26/11/06,12:00:00+00", "+CCLK: \"26/11/06,12:00"})
+    assert(networkTimeUtc(bad) == 0);
+  assert(networkTimeUtc(nullptr) == 0);
+
   assert(!expired(0xfffffff0u, 0xffffff00u, 300));
   assert(expired(0x30u, 0xffffff00u, 300)); // Retry/registration clocks survive rollover.
-  assert(kMaxAttempts == 3);
-  assert(retryDelayMs(1) == 5000 && retryDelayMs(2) == 15000);
+  // No attempt limit: a Device out of coverage keeps trying, ever more slowly.
+  assert(retryDelayMs(0) == 5000 && retryDelayMs(1) == 5000 && retryDelayMs(2) == 15000);
+  assert(retryDelayMs(3) == 30000 && retryDelayMs(4) == 60000 && retryDelayMs(5) == 120000);
+  assert(retryDelayMs(6) == 240000 && retryDelayMs(7) == kMaxRetryDelayMs && kMaxRetryDelayMs == 300000);
+  assert(retryDelayMs(1000) == kMaxRetryDelayMs && retryDelayMs(~0u) == kMaxRetryDelayMs);
 }

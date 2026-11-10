@@ -11,6 +11,7 @@
 #include "played_receipt.h"
 #include "endpoint_availability.h"
 #include <cassert>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <functional>
@@ -21,7 +22,7 @@ constexpr int LOW=0, HIGH=1, PIN_BTN_POWER=-1, ESP_OK=0, ESP_ERR_TIMEOUT=2;
 static uint32_t now=100, volumeChangedAt=0;
 static int volume=5, levels[6]={1,1,1,1,1,1}, playbackMutex=1, txChan=1, portMAX_DELAY=0;
 static bool muted=false, recording=false, playing=false, offRequested=false, volumeFeedback=false;
-static bool wsOpen=true, board06AmpOn=false;
+static bool wsOpen=true, board06AmpOn=false, micCapturing=false;
 static struct { int talk=1, play=5, volumeUp=2, volumeDown=4; } buttons;
 static Pcb06CueQueue board06CueQueue;
 static Pcb06CuePlayer board06CuePlayer;
@@ -68,10 +69,11 @@ void ringClear(){}
 void pausePlayback(){playing=false;playback.pause();}
 bool playbackPlayStaged(){if(recording||playedReceipt.pending())return false;playing=playback.play();return playing;}
 void wsSendText(const char*){++listenRequests;if(onListen)onListen();}
-void startRecording(){assert(levels[buttons.talk]==LOW);recording=true;}
-void stopRecording(){recording=false;}
-enum class MuseMode {Off,Paired};
-static MuseMode museMode=MuseMode::Off;
+void startRecording(){assert(levels[buttons.talk]==LOW);recording=micCapturing=true;}
+void stopRecording(){recording=micCapturing=false;}
+enum class MuseMode {Off,Asking,Open,Saving,Paired,Failed};
+static std::atomic<MuseMode> museMode{MuseMode::Off};
+static std::atomic<bool> pttClosedMuse{false};
 void museStop(){museMode=MuseMode::Off;}
 void museStart(){}
 
@@ -114,7 +116,7 @@ int main(int argc,char** argv){
     pausePlayback();assert(board06PlayPttChunk() && writes==1);
     assert(playback.played==1000 && !playback.finished && std::strcmp(pendingAck,"test-reply")==0);
   }else if(mode=="ptt-production" || mode=="ptt-mute-new-cue"){
-    writeDelay=10;levels[1]=LOW;recording=true;
+    writeDelay=10;levels[1]=LOW;recording=micCapturing=true;
     board06ObservePtt();now+=20;board06ObservePtt();
     for(int i=0;i<190;++i){board06ObservePtt();assert(board06PlayPttChunk());}
     assert(board06PttPlayer.phase()==Pcb06PttPlayer::Phase::Bed && board06PttOwnsOutput);
@@ -139,6 +141,53 @@ int main(int argc,char** argv){
     levels[1]=HIGH;board06ObservePtt();assert(board06PttPlayer.phase()==Pcb06PttPlayer::Phase::Close);
     for(int i=0;i<50 && board06PttPlayer.active();++i){board06ObservePtt();board06PlayPttChunk();}
     assert(!board06PttPlayer.active() && !board06AmpOn && recording);
+  }else if(mode=="ptt-refused-offline" || mode=="ptt-refused-uploading"){
+    // The opening sound means the microphone is open. With the relay away, or
+    // an earlier request still uploading, this press cannot become speech: it
+    // is silent throughout, release included.
+    if(mode=="ptt-refused-offline")wsOpen=false;else{recording=true;micCapturing=false;}
+    levels[1]=LOW;board06ObservePtt();now+=20;board06ObservePtt();
+    assert(!board06PttPlayer.active() && !board06PlayPttChunk() && writes==0 && !board06AmpOn);
+    // Recovery in the middle of the press does not start a late opening sound.
+    wsOpen=true;recording=false;now+=100;board06ObservePtt();
+    assert(!board06PlayPttChunk() && writes==0);
+    levels[1]=HIGH;board06ObservePtt();now+=20;board06ObservePtt();
+    assert(!board06PttPlayer.active() && !board06PlayPttChunk() && writes==0);
+    // The next press can become speech and sounds as usual.
+    levels[1]=LOW;board06ObservePtt();now+=20;board06ObservePtt();
+    assert(board06PlayPttChunk() && writes==1 && board06PttPlayer.phase()==Pcb06PttPlayer::Phase::Open);
+  }else if(mode=="ptt-refused-muse-audio-first" || mode=="ptt-refused-muse-main-first"){
+    // The press closes an open Muse window instead of opening the mic. Either
+    // task can sample it first, and neither ordering may play a Talk cue.
+    museMode=MuseMode::Open;levels[1]=LOW;
+    if(mode=="ptt-refused-muse-main-first")service();
+    board06ObservePtt();now+=20;board06ObservePtt();service();
+    assert(museMode==MuseMode::Off && !recording && !micCapturing);
+    assert(!board06PttPlayer.active() && !board06PlayPttChunk() && writes==0);
+    // Keeping it held after Muse closes cannot start a late cue.
+    now+=100;board06ObservePtt();service();
+    assert(!board06PttPlayer.active() && !recording);
+    levels[1]=HIGH;service();board06ObservePtt();now+=20;board06ObservePtt();
+    // A fresh press after release is a normal Talk press.
+    levels[1]=LOW;service();board06ObservePtt();now+=20;board06ObservePtt();
+    assert(recording && micCapturing && board06PttPlayer.active());
+  }else if(mode=="ptt-muse-paired"){
+    // The completed-pairing result is allowed to close and start Talk at once.
+    museMode=MuseMode::Paired;levels[1]=LOW;
+    board06ObservePtt();now+=20;board06ObservePtt();service();
+    assert(museMode==MuseMode::Off && recording && micCapturing);
+    assert(board06PttPlayer.active() && board06PlayPttChunk());
+  }else if(mode=="ptt-refused-after-silent-release"){
+    // A release seen while muted or at volume zero still ends that press: the
+    // next one is judged on its own, not on what the last press was allowed.
+    levels[1]=LOW;recording=micCapturing=true;board06ObservePtt();now+=20;board06ObservePtt();
+    assert(board06PlayPttChunk());
+    volume=0;board06ObservePtt();
+    levels[1]=HIGH;recording=micCapturing=false;board06ObservePtt();now+=20;board06ObservePtt();
+    for(int i=0;i<50 && board06PttPlayer.active();++i){board06ObservePtt();board06PlayPttChunk();}
+    volume=5;wsOpen=false;const int before=writes;
+    levels[1]=LOW;board06ObservePtt();now+=20;board06ObservePtt();
+    assert(!board06PttPlayer.active() && !board06PlayPttChunk() && writes==before);
   }else if(mode=="ptt-stalled"){
     writeDelay=10;writeLimit=1;levels[1]=LOW;
     board06ObservePtt();now+=20;board06ObservePtt();

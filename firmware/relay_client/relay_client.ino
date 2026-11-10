@@ -27,6 +27,7 @@
 #include <Preferences.h>
 #include <driver/i2s_std.h>          // ESP-IDF 5.x API - NOT driver/i2s.h
 #include <mbedtls/base64.h>
+#include <mbedtls/x509.h>
 #include <esp_task_wdt.h>
 #include <esp_random.h>
 #include <esp_mac.h>
@@ -35,6 +36,7 @@
 #include <esp_heap_caps.h>
 #include <lwip/ip_addr.h>
 #include <time.h>
+#include <esp_sntp.h>
 #include <new>
 #include "config.h"
 #include "board_profile.h"
@@ -67,6 +69,7 @@ extern "C" bool verifyRollbackLater() { return true; }
 #endif
 #include "src/audio/mp3_codec.h"
 #include "volume_button.h"
+#include "volume_store.h"
 #include "repaired_speaker.h"
 #include "pdm_speaker.h"
 #include "status_led.h"
@@ -79,6 +82,10 @@ extern "C" bool verifyRollbackLater() { return true; }
 #include "websocket_reader.h"
 #include "mic_filter.h"
 #include "reconnect_policy.h"
+#include "data_path_watch.h"
+#include "socket_timeouts.h"
+#include "boot_report.h"
+#include "clock_seed.h"
 #include "ptt_gesture.h"
 #ifndef RELAY_CELLULAR  // Muse pairing needs Bluetooth and Wi-Fi; not the legacy cellular board
 #include "wifi_settings.h"
@@ -89,8 +96,14 @@ extern "C" bool verifyRollbackLater() { return true; }
 #include <esp_mac.h>
 #endif
 
+// The audio task can observe Talk before or after buttonService closes Muse.
+// Keep the consumed press visible until release in either ordering.
+static std::atomic<bool> pttClosedMuse{false};
+static bool museBlocksTalk();
+
 #ifdef RELAY_CELLULAR
 #include "cellular.h"
+#include "cellular_policy.h"  // the power-off budget a restart waits for
 #ifdef RELAY_BOARD_06
 // tools/build_pcb06.py --version sets the release version; hello reports it.
 #ifndef RELAY_FW_SEMVER
@@ -172,8 +185,12 @@ static const size_t PAIR_ID_MAX = 32;       // matches cloud/relay.py
 // setInsecure(): the far end of this socket runs shell commands on somebody's
 // Mac, so an unauthenticated TLS session would let anyone on the path inject
 // one. The chain is leaf -> YE2 -> ISRG Root YE -> X2, so X2 verifies it in two
-// hops. X1 also works but only via a cross-signature, which is the longest path
-// in and the one that breaks when Let's Encrypt stops cross-signing.
+// hops.
+//
+// ISRG Root X1 follows as a second anchor. Firmware updates arrive over this
+// same socket, so a single anchor has no way back the day the server's chain
+// stops ending at it (an RSA certificate, a retired cross-signature). Both are
+// the same CA's public roots; the hostname check is unchanged.
 static const char *RELAY_CA = R"CERT(
 -----BEGIN CERTIFICATE-----
 MIICGzCCAaGgAwIBAgIQQdKd0XLq7qeAwSxs6S+HUjAKBggqhkjOPQQDAzBPMQsw
@@ -188,6 +205,37 @@ AQH/BAUwAwEB/zAdBgNVHQ4EFgQUfEKWrt5LSDv6kviejM9ti6lyN5UwCgYIKoZI
 zj0EAwMDaAAwZQIwe3lORlCEwkSHRhtFcP9Ymd70/aTSVaYgLXTWNLxBo1BfASdW
 tL4ndQavEi51mI38AjEAi/V3bNTIZargCyzuFJ0nN6T5U6VR5CmD1/iQMVtCnwr1
 /q4AaOeMSQ+2b1tbFfLn
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
+TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
+cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4
+WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu
+ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY
+MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54rVygc
+h77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+
+0TM8ukj13Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6U
+A5/TR5d8mUgjU+g4rk8Kb4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+sW
+T8KOEUt+zwvo/7V3LvSye0rgTBIlDHCNAymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyH
+B5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ4Q7e2RCOFvu396j3x+UC
+B5iPNgiV5+I3lg02dZ77DnKxHZu8A/lJBdiB3QW0KtZB6awBdpUKD9jf1b0SHzUv
+KBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWn
+OlFuhjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTn
+jh8BCNAw1FtxNrQHusEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbw
+qHyGO0aoSCqI3Haadr8faqU9GY/rOPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CI
+rU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNV
+HRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY9umbbjANBgkq
+hkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
+ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ
+3BebYhtF8GaV0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KK
+NFtY2PwByVS5uCbMiogziUwthDyC3+6WVwW6LLv3xLfHTjuCvjHIInNzktHCgKQ5
+ORAzI4JMPJ+GslWYHb4phowim57iaztXOoJwTdwJx4nLCgdNbOhdjsnvzqvHu7Ur
+TkXWStAmzOVyyghqpZXjFaH3pO3JLF+l+/+sKAIuvtd7u+Nxe5AW0wdeRlN8NwdC
+jNPElpzVmbUq4JUagEiuTDkHzsxHpFKVK7q4+63SM1N95R1NbdWhscdCb+ZAJzVc
+oyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq
+4RgqsahDYVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPA
+mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d
+emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 -----END CERTIFICATE-----
 )CERT";
 
@@ -222,6 +270,7 @@ static int volume = 1; // Audition2/sample4: gain2 x volume1/10 = amplitude/5.
 static int volume = 5;                       // 0..10
 #endif
 static bool muted = false;
+static VolumeStore volumeStore;
 // Lowered on a low battery so loud replies cannot brown out the modem
 // (battery_watch.h). The chosen `volume` is kept and returns on charge.
 // ponytail: replies and tones only; button clicks and the Talk sound are
@@ -326,6 +375,11 @@ static_assert(STATUS_WITH_PING_MS + 240000 < 20UL * 60 * 1000,
 static const uint32_t IDLE_NAP_MS = 10;
 // Board-independent retry timing; the first boot dial is the only fast path.
 static reconnect_policy::Policy reconnectPolicy;
+// Restarts a bearer that reports data while the relay stays out of reach.
+static DataPathWatch dataPath;
+static_assert(kTlsCertificateRejected == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED,
+              "data_path_watch.h must match the pinned mbedTLS");
+static bool wsReachedRelay = false;  // the last dial got as far as a TLS session
 // The relay pings every 240 s. Silence well past that is not a quiet link, it
 // is a black-holed one: a carrier NAT rebind leaves TCP "connected" here while
 // nothing can cross, and tls.connected() cannot see the difference. Without
@@ -334,6 +388,7 @@ static const uint32_t RX_DEADLINE_MS = 390000;    // 1.5 * 240 s + slack
 static uint32_t lastRxMs       = 0;
 // Soft off is its own runtime: switching off or on restarts the firmware.
 static RTC_NOINIT_ATTR uint32_t softOffMarker;
+static RTC_NOINIT_ATTR BrownoutRecord brownoutRecord;
 static bool     asleep         = false;      // this is the switched-off runtime
 static volatile bool offRequested = false;   // close the socket, then restart off
 // 06 battery: set by loop(), read by powerTask() while switched off.
@@ -373,6 +428,16 @@ static void scheduleRetry(int closeCode = 0) {
 // Spread IP recovery without cancelling a slower authorization retry.
 static void retryNow() {
   reconnectPolicy.networkAvailable(millis(), jitterRandom());
+}
+
+// A dial never reached the relay, or its open socket went silent. Redialing
+// over a dead modem session cannot recover, so a sustained run restarts it.
+static void dataPathUnreachable() {
+#ifdef RELAY_CELLULAR
+  if (!networkConnected() || !dataPath.unreachable(millis())) return;
+  Serial.println("[net] relay unreachable over a live bearer; restarting the modem");
+  cellularRestart();
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -462,7 +527,24 @@ static void buttonsCommand(String args) {
   }
   Serial.println("[buttons] saved; restarting");
   Serial.flush();
+  modemOffForRestart();
   ESP.restart();
+}
+
+// The stored volume lives beside the credential; without one the board default
+// above stands.
+static void loadVolume() {
+  volume = VolumeStore::restore(provisionStore.getUChar("volume", 255), volume);
+  volumeStore.loaded(volume);
+}
+
+// A flash write stalls the audio paths, so the volume is written once it has
+// rested and never during Talk or playback.
+static void volumeSaveService() {
+  if (recording || playing || !volumeStore.due(volume, millis())) return;
+  const bool saved = provisionStore.putUChar("volume", uint8_t(volume)) != 0;
+  if (!saved) Serial.println("[vol] could not save");
+  volumeStore.written(saved, millis());
 }
 
 static void loadProvisioning() {
@@ -534,13 +616,29 @@ static bool board06DrainSpeaker() {
   return drained;
 }
 
+// The opening sound means the microphone is open. A press cannot become
+// speech with the relay away, during an earlier upload, or when the press
+// only closes Muse pairing, so that press is silent from down to up.
+// Decided once, on the press: recovery halfway must not start a late sound.
+static bool board06TalkRefused(bool down) {
+  static bool wasDown = false, refused = false;
+  if (!down) refused = false;
+  else if (!wasDown)
+    refused = !wsOpen || (recording && !micCapturing)
+        || museBlocksTalk() || pttClosedMuse.load();
+  wasDown = down;
+  return refused;
+}
+
 // Physical release is observed here even while loop() waits on the network.
 // Reply-owned DMA must first pass through the existing pause/drain handoff.
 static void board06ObservePtt() {
   static uint32_t lastFlushEpoch = UINT32_MAX;
   xSemaphoreTake(playbackMutex, portMAX_DELAY);
-  board06PttPlayer.observe(digitalRead(buttons.talk) == LOW,
-      muted || volume == 0 || offRequested, millis());
+  const bool down = digitalRead(buttons.talk) == LOW;
+  // Every sample, not only when audible: it tracks the press edge itself.
+  const bool refused = board06TalkRefused(down);
+  board06PttPlayer.observe(down, muted || volume == 0 || offRequested || refused, millis());
   if (board06PttPlayer.flushing() && (board06PttOwnsOutput || !playing)) {
     if (lastFlushEpoch != board06PttPlayer.flushEpoch()) {
       lastFlushEpoch = board06PttPlayer.flushEpoch();
@@ -1036,6 +1134,7 @@ static const uint8_t *wsFrame = nullptr;
 // One sender for every opcode. A client MUST mask, per RFC 6455.
 static bool wsSendFrame(uint8_t opcode, const uint8_t *payload, size_t len) {
   if (!tls.connected()) return false;
+  const uint32_t started = millis();
   uint8_t hdr[14];
   size_t h = 0;
   hdr[h++] = 0x80 | opcode;
@@ -1051,13 +1150,22 @@ static bool wsSendFrame(uint8_t opcode, const uint8_t *payload, size_t len) {
   for (int i = 0; i < 4; i++) mask[i] = (uint8_t)esp_random();
   memcpy(hdr + h, mask, 4); h += 4;
   if (tls.write(hdr, h) != (int)h) return false;
+  // Every completed write is progress. A slow uplink may take several stalls
+  // of up to kSocketTimeoutMs to move one frame; only no progress is a hang.
+  esp_task_wdt_reset();
 
   uint8_t chunk[512];
   size_t sent = 0;
   while (sent < len) {
+    if (uint32_t(millis() - started) >= kFrameSendMs) {
+      Serial.println("[ws] frame could not be sent in time - closing");
+      tls.stop();
+      return false;
+    }
     size_t n = min(sizeof(chunk), len - sent);
     for (size_t i = 0; i < n; i++) chunk[i] = payload[sent + i] ^ mask[(sent + i) & 3];
     if (tls.write(chunk, n) != (int)n) return false;
+    esp_task_wdt_reset();
     sent += n;
   }
   return true;
@@ -1142,33 +1250,111 @@ static time_t buildTime() {
 // ponytail: the build stamp drifts out of the certificate's window after about
 // three months of uptime with no SNTP. A reflash fixes it; an RTC or a working
 // NTP path fixes it properly.
+//
+// The mobile network's own time, when the modem has it, replaces that floor:
+// it is right however old the image is. Looked at before every dial, because a
+// later modem session may bring the time the first one lacked.
+static volatile bool sntpSynced = false;  // set from the SNTP task's first answer
+
+static void seedClock() {
+  int64_t network = 0;
+#ifdef RELAY_CELLULAR
+  if (!cellularNetworkTime(network)) network = 0;
+#endif
+  const int64_t seed = clockSeed(time(nullptr), buildTime(), network, sntpSynced);
+  if (!seed) return;
+  struct timeval tv = { .tv_sec = (time_t)seed, .tv_usec = 0 };
+  settimeofday(&tv, nullptr);
+  Serial.printf("[time] clock set from the %s: %s",
+                network && seed == network ? "mobile network" : "build stamp",
+                ctime(&tv.tv_sec));
+}
+
 static bool clockReady() {
   static bool started = false;
   if (!started) {
     ensureDns();                    // fixes the resolver for everything after
+    sntp_set_time_sync_notification_cb([](struct timeval *) { sntpSynced = true; });
     configTime(0, 0, "216.239.35.0", "162.159.200.1");
-    if (time(nullptr) < 1700000000) {
-      struct timeval tv = { .tv_sec = buildTime(), .tv_usec = 0 };
-      settimeofday(&tv, nullptr);
-      time_t now = tv.tv_sec;
-      Serial.printf("[time] no clock yet - seeded from the build stamp: %s",
-                    ctime(&now));
-    }
     started = true;
   }
-  return time(nullptr) > 1700000000;
+  seedClock();
+  return time(nullptr) > kClockUnsetBeforeS;
+}
+
+// Stream::setTimeout() is the per-character read wait in milliseconds; it
+// never bounded the socket. setConnectionTimeout() does: the TCP connect, and
+// a TLS write that stops making progress.
+static void configureRelaySocket() {
+  tls.setCACert(RELAY_CA);
+  tls.setTimeout(kUpgradeReadMs);
+  tls.setConnectionTimeout(kSocketTimeoutMs);
+  // Without this the handshake can block forever on a network that drops the
+  // SYN instead of refusing it - and a blocked loop() takes the serial console
+  // with it, so the board looks dead rather than stuck.
+  tls.setHandshakeTimeout(kTlsHandshakeS);
+}
+
+// Read one line with both an idle limit and the upgrade's absolute deadline.
+// Stream::readStringUntil restarts its wait after every character, so a slow
+// unfinished line can otherwise outlive the deadline and trip the watchdog.
+static bool wsReadUpgradeLine(String &line, uint32_t started, size_t &receivedBytes) {
+  static const size_t kMaxLineBytes = 1024, kMaxResponseBytes = 8192;
+  line = String();
+  uint32_t lastByteAt = millis();
+  while (uint32_t(millis() - started) < kUpgradeTotalMs) {
+    esp_task_wdt_reset();
+    if (tls.available()) {
+      const int next = tls.read();
+      if (next >= 0) {
+        lastByteAt = millis();
+        if (++receivedBytes > kMaxResponseBytes) return false;
+        if (next == '\n') return true;
+        if (line.length() >= kMaxLineBytes) return false;
+        line += char(next);
+        continue;
+      }
+    }
+    if (!tls.connected() || uint32_t(millis() - lastByteAt) >= kUpgradeReadMs)
+      return false;
+    delay(10);
+  }
+  return false;
+}
+
+// Reads the 101 status and headers up to the blank line. A stalled, oversized
+// or unfinished response fails the dial instead of becoming WebSocket bytes.
+static bool wsAwaitUpgrade() {
+  const uint32_t started = millis();
+  while (tls.connected() && !tls.available() && uint32_t(millis() - started) < 10000) {
+    delay(10);
+    esp_task_wdt_reset();
+  }
+  size_t receivedBytes = 0;
+  String status;
+  if (!wsReadUpgradeLine(status, started, receivedBytes)) {
+    Serial.println("[ws] upgrade response never finished");
+    return false;
+  }
+  if (status.indexOf("101") < 0) {
+    Serial.printf("[ws] handshake rejected: %s\n", status.c_str());
+    return false;
+  }
+  while (tls.connected() && uint32_t(millis() - started) < kUpgradeTotalMs) {
+    String line;
+    if (!wsReadUpgradeLine(line, started, receivedBytes)) break;
+    if (line == "\r") return true;
+  }
+  Serial.println("[ws] upgrade response never finished");
+  return false;
 }
 
 static bool wsConnect() {
   if (!relayCredential.length()) return false;
+  wsReachedRelay = false;
   ensureDns();
   tls.stop();
-  tls.setCACert(RELAY_CA);
-  tls.setTimeout(15);
-  // Without this the handshake can block forever on a network that drops the
-  // SYN instead of refusing it - and a blocked loop() takes the serial console
-  // with it, so the board looks dead rather than stuck.
-  tls.setHandshakeTimeout(30);
+  configureRelaySocket();
 
   // tls.connect() blocks, and verifying a four-deep ECDSA chain over a slow
   // VLAN can outlast the 20 s task watchdog - which reboots the board in the
@@ -1185,7 +1371,7 @@ static bool wsConnect() {
                 (unsigned long)(millis() - tlsStart));
   if (!up) {
     char err[160] = {0};
-    tls.lastError(err, sizeof(err));
+    wsReachedRelay = dialReachedRelay(false, tls.lastError(err, sizeof(err)));
     time_t now = time(nullptr);
     Serial.printf("[ws] mbedtls says: %s\n", err[0] ? err : "(nothing)");
     Serial.printf("[ws] clock is %s", ctime(&now));
@@ -1193,6 +1379,9 @@ static bool wsConnect() {
                   (unsigned long)ESP.getFreeHeap());
     return false;
   }
+  wsReachedRelay = true;
+  time_t verifiedAt = time(nullptr);
+  Serial.printf("[ws] clock is %s", ctime(&verifiedAt));  // the time the certificate passed at
   uint8_t rnd[16];
   for (int i = 0; i < 16; i++) rnd[i] = (uint8_t)esp_random();
   unsigned char key[32];
@@ -1209,17 +1398,9 @@ static bool wsConnect() {
                "Authorization: " + relayCredential + "\r\n\r\n";
   tls.print(req);
 
-  uint32_t t0 = millis();
-  while (!tls.available() && millis() - t0 < 10000) { delay(10); esp_task_wdt_reset(); }
-  String status = tls.readStringUntil('\n');
-  if (status.indexOf("101") < 0) {
-    Serial.printf("[ws] handshake rejected: %s\n", status.c_str());
+  if (!wsAwaitUpgrade()) {
     tls.stop();
     return false;
-  }
-  while (tls.connected()) {
-    String line = tls.readStringUntil('\n');
-    if (line.length() <= 1) break;
   }
   Serial.printf("[ws] connected to %s%s\n", HOST, PATH);
   return true;
@@ -1386,10 +1567,17 @@ static void flushMicBatch() { sendMicFrames(true); }
 // a tap stays on the Device (taps open Muse pairing).
 // Called only with micMutex held. A separate task checks the physical input,
 // so a slow network write cannot leave microphone clocks running on release.
+// A driver that refuses to stop is discarded, never a reason to restart the
+// firmware in someone's hand: the next press builds a new channel. Only a
+// channel that cannot be released either still restarts, because it would
+// hold the microphone port and leave Talk dead until the next restart anyway.
 static void stopMicCapture() {
   if (!micCapturing) return;
-  ESP_ERROR_CHECK(i2s_channel_disable(rxChan));
   micCapturing = false;
+  if (i2s_channel_disable(rxChan) == ESP_OK) return;
+  Serial.println("[mic] capture did not stop cleanly; channel discarded");
+  ESP_ERROR_CHECK(i2s_del_channel(rxChan));
+  rxChan = nullptr;
 }
 
 #ifdef RELAY_BOARD_06
@@ -1592,7 +1780,8 @@ static void stopRecording() {
   {
     MicLock guard;
     stopMicCapture();
-    ESP_ERROR_CHECK(i2s_del_channel(rxChan));
+    if (rxChan && i2s_del_channel(rxChan) != ESP_OK)
+      Serial.println("[mic] channel was not released cleanly");
     rxChan = nullptr;
   }
   // A release can beat the loop's talk.start check by a few milliseconds.
@@ -1690,7 +1879,12 @@ static void retryPlayback() {
 // ---------------------------------------------------------------------------
 
 enum class MuseMode { Off, Asking, Open, Saving, Paired, Failed };
-static MuseMode museMode = MuseMode::Off;
+static std::atomic<MuseMode> museMode{MuseMode::Off};
+
+static bool museBlocksTalk() {
+  const MuseMode mode = museMode.load();
+  return mode != MuseMode::Off && mode != MuseMode::Paired;
+}
 
 #ifdef RELAY_CELLULAR
 static void museStop() {}
@@ -2271,9 +2465,22 @@ static void ledService() {
 // unplayed replies in the cloud mailbox. The switched-off runtime starts only
 // the light and Listen, then light-sleeps; the battery stays connected (about
 // 1-2 mA), so this is not a storage power-off.
+// setup() latches the modem supply low within milliseconds of a restart.
+// Ask the cellular worker to power the module down in order first, and give
+// it a bounded wait; with the modem already off this returns at once.
+static void modemOffForRestart() {
+#ifdef RELAY_CELLULAR
+  cellularShutdown();
+  const uint32_t start = millis();
+  while (!cellularPoweredDown() && millis() - start < cellular_policy::kPowerOffBudgetMs) delay(50);
+  if (!cellularPoweredDown()) Serial.println("[cell] power-off did not finish in time");
+#endif
+}
+
 static void restartInto(bool off) {
   softOffMarker = off ? kSoftOffMarker : 0;
   Serial.printf("[power] %s - restarting\n", off ? "soft off" : "on");
+  modemOffForRestart();
   esp_restart();
 }
 
@@ -2422,17 +2629,18 @@ static void buttonService() {
   // Quick taps never leave the Device; three of them open Muse pairing.
   static PttTaps pttTaps;
   static uint32_t pttPressedAt = 0;
-  static bool pttClosedMuse = false;
   if (speak != lastSpeak) {
     lastChange = millis();
     if (speak == LOW) {
       pttPressedAt = millis();
-      pttClosedMuse = museMode != MuseMode::Off && museMode != MuseMode::Paired;
+      const bool closesMuse = museBlocksTalk();
+      pttClosedMuse.store(closesMuse);
       if (museMode != MuseMode::Off) museStop();
-      if (!pttClosedMuse) startRecording();
+      if (!closesMuse) startRecording();
     } else {
       stopRecording();
-      if (!pttClosedMuse && pttTaps.release(pttPressedAt, millis())) museStart();
+      if (!pttClosedMuse.load() && pttTaps.release(pttPressedAt, millis())) museStart();
+      pttClosedMuse.store(false);
     }
     lastSpeak = speak;
   }
@@ -2610,6 +2818,32 @@ static void showBatteryEmpty() {
 }
 
 #ifdef RELAY_BOARD_06
+// The first gauge read, before the modem, speaker or microphone are powered.
+// Returns whether this boot runs switched off. A boot that would start on an
+// empty battery (switched on, or restarted by the brownout it just caused)
+// stays off instead, and so does every restart after it, until it is charged.
+static bool board06StartsOff(bool asleepAtBoot) {
+  const auto allowed = []() {
+    BatteryReading reading{};
+    const bool read = readBatteryGauge(Wire, reading);
+    return batteryAllowsStart(read, reading.roundedPercent(), reading.volts,
+                              digitalRead(PIN_USB_PRESENT_N) == LOW);
+  };
+  // Two empty readings, as switching off while running takes: one unsettled
+  // sample just after a reset must not keep a charged Device off.
+  bool empty = !allowed();
+  if (empty) {
+    delay(500);
+    empty = !allowed();
+  }
+  batteryEmpty = empty;
+  if (asleepAtBoot || !batteryEmpty) return asleepAtBoot;
+  Serial.println("[battery] empty at start - staying off");
+  softOffMarker = kSoftOffMarker;
+  switchOnRefused = true;  // loop() gives the empty-battery signal once
+  return true;
+}
+
 // Reads the gauge every 30 s and at once after a plug change, once the power
 // state has settled. Returns a warning that is now due, if any.
 static BatteryAlert batteryService() {
@@ -2898,6 +3132,7 @@ static void board06OtaService() {
     if (!board06RegisteredAt && networkConnected()) board06RegisteredAt = now | 1;
     if (board06RegisteredAt && uint32_t(now - board06RegisteredAt) >= kOtaVerifyDeadlineMs) {
       Serial.println("[ota] new image never reached the relay; rolling back");
+      modemOffForRestart();
       pcb06_ota::rollBack();
     }
     return;
@@ -2968,10 +3203,27 @@ static void board06OtaService() {
 }
 #endif
 
+// An explicit declaration keeps Arduino's generated prototype after the type.
+static BootCause bootCause(int resetReason);
+static BootCause bootCause(int resetReason) {
+  switch (resetReason) {
+    case ESP_RST_POWERON: return BootCause::PowerOn;
+    case ESP_RST_SW: return BootCause::Requested;
+    case ESP_RST_PANIC:
+    case ESP_RST_CPU_LOCKUP: return BootCause::Crash;
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT: return BootCause::Watchdog;
+    case ESP_RST_BROWNOUT:
+    case ESP_RST_PWR_GLITCH: return BootCause::Brownout;
+    default: return BootCause::Other;
+  }
+}
+
 // A loop() stuck for 20 s panics. The restart keeps the on/off marker, so a
 // stuck on runtime comes back on and a stuck off runtime stays off.
 static void watchLoop() {
-  esp_task_wdt_config_t wdt = {.timeout_ms = 20000, .idle_core_mask = 0,
+  esp_task_wdt_config_t wdt = {.timeout_ms = kLoopWatchdogMs, .idle_core_mask = 0,
                                .trigger_panic = true};
   esp_task_wdt_reconfigure(&wdt);
   esp_task_wdt_add(nullptr);
@@ -3006,6 +3258,10 @@ void setup() {
   Serial.printf("=== relay client %s ===\n", FW_VERSION);
   Serial.printf("chip %s, heap %lu\n", ESP.getChipModel(),
                 (unsigned long)ESP.getFreeHeap());
+  const BootCause cause = bootCause(esp_reset_reason());
+  Serial.printf("[boot] cause=%s\n", bootCauseName(cause));
+  // The firmware restarting itself gets no chirp; an update restart neither.
+  bool quietBoot = bootIsUnattended(cause);
 
 #ifndef RELAY_OFFICIAL_BUILD
   Serial.println("[build] custom build; automatic updates off");
@@ -3013,8 +3269,17 @@ void setup() {
 
   asleep = bootsOff(softOffMarker, esp_reset_reason() == ESP_RST_POWERON);
   if (!asleep) softOffMarker = 0;
+  // Before anything is powered: a third brownout restart in a row stays off,
+  // like an empty battery, until someone charges it and switches it on.
+  if (brownoutStaysOff(brownoutRecord, cause) && !asleep) {
+    Serial.println("[power] repeated brownout restarts - staying off");
+    asleep = true;
+    softOffMarker = kSoftOffMarker;
+    switchOnRefused = true;  // loop() gives the empty-battery signal once
+  }
   loadProvisioning();
   loadButtonMap();
+  loadVolume();
 #ifdef RELAY_BOARD_06
   board06Ota = OtaPolicy(pcb06_ota::load());
   const OtaBoot otaBoot = board06Ota.boot(RELAY_FW_SEMVER, millis());
@@ -3027,6 +3292,7 @@ void setup() {
   if (board06OtaUnproven) Serial.println("[ota] new image: waiting to reach the relay");
   // ponytail: a switch-on during a rolled-back first run is also quiet; rare.
   board06QuietBoot = board06OtaUnproven || otaBoot == OtaBoot::RolledBack;
+  quietBoot = quietBoot || board06QuietBoot;
   board06OtaSave();
 #endif
   pinMode(buttons.play, RELAY_BUTTON_INPUT_MODE);
@@ -3046,11 +3312,7 @@ void setup() {
   // and to refuse switching on with an empty battery.
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, 100000);
   Wire.setTimeOut(20);
-  if (asleep) {
-    BatteryReading reading;
-    batteryEmpty = readBatteryGauge(Wire, reading) && digitalRead(PIN_USB_PRESENT_N) == HIGH
-        && batteryEmptyNow(reading.roundedPercent(), reading.volts);
-  }
+  asleep = board06StartsOff(asleep);
 #endif
 
   // 4 KiB: esp_restart() runs the Wi-Fi shutdown handler on this stack.
@@ -3145,19 +3407,21 @@ void setup() {
 
   watchLoop();
 
-#ifdef RELAY_BOARD_06
   // An update restarts the Device by itself after 15 idle minutes, maybe at
   // night: no chirp or flash for the new image's first run, or for the old
-  // image coming back after a failed one.
-  if (!board06QuietBoot) bootChirp();
-#else
-  bootChirp();
-#endif
+  // image coming back after a failed one. The same after a crash, watchdog or
+  // brownout restart.
+  if (!quietBoot) bootChirp();
   help();
 }
 
 void loop() {
   esp_task_wdt_reset();
+  static bool settled = false;
+  if (!settled && !asleep && millis() >= kBrownoutSettledMs) {
+    settled = true;
+    brownoutSettled(brownoutRecord);
+  }
 #ifdef RELAY_BOARD_06
   board06Power.update(digitalRead(PIN_USB_PRESENT_N) == LOW,
                       digitalRead(PIN_CHG_STAT_N) == LOW, millis());
@@ -3186,11 +3450,13 @@ void loop() {
   if (!haveNetwork && hadNetwork) {
     // An old TCP socket cannot survive moving to a different access point.
     if (wsOpen) connectionEnded();
+    dataPath.bearerDown();
   }
   if (haveNetwork && !hadNetwork) retryNow();
   hadNetwork = haveNetwork;
 
   buttonService();
+  volumeSaveService();
 #ifdef RELAY_BOARD_06
   board06ButtonCueService();
   board06ServiceListenRequest();
@@ -3383,7 +3649,7 @@ void loop() {
   if (millis() - lastStat > 3000) {
     lastStat = millis();
     Serial.printf("[stat] staged=%luB(%lums) receiving=%d held=%d ready=%d ring=%lu "
-                  "rx=%lu under=%lu trunc=%lu peak_out=%ld heap=%lu rssi=%d %s\n",
+                  "rx=%lu under=%lu trunc=%lu peak_out=%ld heap=%lu minheap=%lu rssi=%d %s\n",
                   (unsigned long)playbackBytes,
                   (unsigned long)(uint64_t(playback.samples) * 1000 / SAMPLE_RATE_HZ),
                   playbackReceiving ? 1 : 0, playback.staged ? 1 : 0,
@@ -3392,7 +3658,8 @@ void loop() {
                   (unsigned long)framesRecvd,
                   (unsigned long)underruns,
                   (unsigned long)truncatedFrames, (long)peakWindow,
-                  (unsigned long)ESP.getFreeHeap(), networkRssi(),
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)ESP.getMinFreeHeap(), networkRssi(),
                   wsOpen ? "ws:up" : "ws:down");
     peakWindow = 0; peakPreGain = 0;
   }
@@ -3438,9 +3705,13 @@ void loop() {
       wsOpen = true;
       clearAvailability();
       reconnectPolicy.connected(millis());
+      dataPath.reached();
       lastRxMs = millis();
       announceConnection();
     } else {
+      // A relay that answered, even to refuse, proves the bearer works.
+      if (wsReachedRelay) dataPath.reached();
+      else dataPathUnreachable();
       scheduleRetry();
     }
     return;
@@ -3457,6 +3728,7 @@ void loop() {
   if (millis() - lastRxMs > RX_DEADLINE_MS) {
     Serial.printf("[ws] silent %lu ms - link is dead, reconnecting\n",
                   (unsigned long)(millis() - lastRxMs));
+    dataPathUnreachable();
     connectionEnded();
     return;
   }

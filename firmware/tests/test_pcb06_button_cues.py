@@ -16,6 +16,8 @@ class Pcb06ButtonCueTests(unittest.TestCase):
         functions = "\n".join(
             function(sketch, name)
             for name in (
+                "museBlocksTalk",
+                "board06TalkRefused",
                 "board06ObservePtt",
                 "board06PlayPttChunk",
                 "board06PlayCueChunk",
@@ -51,6 +53,12 @@ class Pcb06ButtonCueTests(unittest.TestCase):
                 "ptt-reply-gate",
                 "ptt-production",
                 "ptt-mute-new-cue",
+                "ptt-refused-offline",
+                "ptt-refused-uploading",
+                "ptt-refused-muse-audio-first",
+                "ptt-refused-muse-main-first",
+                "ptt-muse-paired",
+                "ptt-refused-after-silent-release",
                 "ptt-stalled",
                 "sample-boundary",
                 "listen-onset",

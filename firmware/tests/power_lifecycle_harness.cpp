@@ -32,7 +32,11 @@ void vTaskDelay(uint32_t ms) {
   now += ms;
   if (now >= end) throw End{};
 }
+static bool modemAsked = false;
+void modemOffForRestart() { modemAsked = true; }  // the sketch's, with no modem built in
 void esp_restart() {
+  assert(modemAsked);  // every restart asks the modem to power down first
+  modemAsked = false;
   restarts.push_back(now);
   throw Restart{};
 }

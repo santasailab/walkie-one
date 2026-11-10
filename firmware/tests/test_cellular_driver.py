@@ -47,6 +47,32 @@ class CellularDriverTests(unittest.TestCase):
             )
             self.assertEqual(run.returncode, 0, run.stderr)
 
+    def test_every_restart_powers_the_modem_down_first(self):
+        # setup() latches the modem supply low within milliseconds of a
+        # restart, so a live module would be cut mid-operation unless the
+        # worker has powered it down before esp_restart().
+        from test_mic_lifecycle import function
+
+        sketch = (FIRMWARE / "relay_client/relay_client.ino").read_text()
+        wait = function(sketch, "modemOffForRestart")
+        self.assertIn("cellularShutdown();", wait)
+        self.assertIn("cellularPoweredDown()", wait)
+        self.assertIn("kPowerOffBudgetMs", wait)
+        into = function(sketch, "restartInto")
+        self.assertLess(
+            into.index("modemOffForRestart();"), into.index("esp_restart();")
+        )
+        buttons = sketch[sketch.index("[buttons] saved; restarting") :]
+        self.assertLess(
+            buttons.index("modemOffForRestart();"), buttons.index("ESP.restart();")
+        )
+        # The OTA API reboots immediately too; rollback must not bypass the
+        # same shutdown used before an ordinary firmware restart.
+        ota = function(sketch, "board06OtaService")
+        self.assertLess(
+            ota.index("modemOffForRestart();"), ota.index("pcb06_ota::rollBack();")
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
