@@ -26,10 +26,16 @@ struct String {
   size_t length() const { return text.size(); }
   const char *c_str() const { return text.c_str(); }
   bool operator==(const char *other) const { return text == other; }
+  String &operator+=(char value) { text += value; return *this; }
 };
 static struct { void printf(const char *, ...) {} void println(const char *) {} } Serial;
 // One line of the peer's response and how long after the previous it arrives.
-struct Arrival { uint32_t afterMs; std::string line; };
+struct Arrival {
+  uint32_t afterMs;
+  std::string line;
+  uint32_t byteAfterMs = 0;  // spacing within one line, not only between lines
+  bool newline = true;
+};
 
 // Units as in the pinned ESP32 core: Stream::setTimeout() is the
 // per-character wait of readStringUntil in MILLISECONDS and does not bound the
@@ -45,21 +51,29 @@ static struct FakeTls {
   uint32_t writeMs = 0;
   std::deque<Arrival> arrivals;
   bool repeatLast = false;
+  size_t readOffset = 0;
   void stop() { up = false; ++stops; }
   bool available() { return !arrivals.empty() && arrivals.front().afterMs == 0; }
   void wait(uint32_t ms) {
     fakeNow += ms;
     if (!arrivals.empty()) arrivals.front().afterMs -= ms < arrivals.front().afterMs ? ms : arrivals.front().afterMs;
   }
-  // Stream::readStringUntil: the line without its terminator, or what arrived
-  // (here nothing) once streamMs passes with no further character.
-  String readStringUntil(char) {
-    if (arrivals.empty() || arrivals.front().afterMs > streamMs) { wait(streamMs); return String(); }
-    wait(arrivals.front().afterMs);
-    const Arrival next = arrivals.front();
-    if (repeatLast && arrivals.size() == 1) arrivals.front().afterMs = next.afterMs ? next.afterMs : 4000;
+  void finishArrival() {
+    readOffset = 0;
+    if (repeatLast && arrivals.size() == 1) arrivals.front().afterMs = 4000;
     else arrivals.pop_front();
-    return String(next.line);
+  }
+  int read() {
+    if (!available()) return -1;
+    Arrival &next = arrivals.front();
+    if (readOffset < next.line.size()) {
+      const int value = static_cast<unsigned char>(next.line[readOffset++]);
+      if (readOffset == next.line.size() && !next.newline) finishArrival();
+      else next.afterMs = next.byteAfterMs;
+      return value;
+    }
+    finishArrival();
+    return '\n';
   }
   void setCACert(const char *text) { ca = text; }
   void setTimeout(unsigned long milliseconds) { streamMs = milliseconds; }
@@ -79,6 +93,7 @@ static void delay(uint32_t ms) { tls.wait(ms); }
 
 static bool upgrade(std::deque<Arrival> arrivals, bool repeatLast = false) {
   tls.up = true;
+  tls.readOffset = 0;
   tls.arrivals = std::move(arrivals);
   tls.repeatLast = repeatLast;
   wdtResets = 0;
@@ -140,5 +155,22 @@ int main() {
   assert(!upgrade({ok, {4000, "X-Padding: 1\r"}}, true));
   assert(fakeNow - started >= kUpgradeTotalMs);
   assert(fakeNow - started <= kUpgradeTotalMs + kUpgradeReadMs);
-  static_assert(kUpgradeTotalMs + kUpgradeReadMs <= 30000, "bounded upgrade");
+  // A single unfinished header trickles bytes within the idle timeout.
+  // The absolute deadline must still win, and the loop watchdog is fed while
+  // waiting rather than only after an entire line has arrived.
+  started = fakeNow;
+  assert(!upgrade({ok, {0, "X-Trickle: an unfinished long header", 4000, false}}));
+  assert(fakeNow - started <= kUpgradeTotalMs);
+  assert(wdtResets > 10);
+  // The status line has the same deadline, even without its first newline.
+  started = fakeNow;
+  assert(!upgrade({{0, "HTTP/1.1 101 Switching Protocols", 4000, false}}));
+  assert(fakeNow - started <= kUpgradeTotalMs);
+  // Bound allocation for one long line and for many small complete headers.
+  assert(!upgrade({ok, {0, std::string(2048, 'x')}, {0, "\r"}}));
+  std::deque<Arrival> many{ok};
+  for (int i = 0; i < 100; ++i) many.push_back({0, "X-Padding: " + std::string(100, 'x') + "\r"});
+  many.push_back({0, "\r"});
+  assert(!upgrade(std::move(many)));
+  static_assert(kUpgradeTotalMs <= 30000, "bounded upgrade");
 }

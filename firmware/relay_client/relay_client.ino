@@ -96,6 +96,11 @@ extern "C" bool verifyRollbackLater() { return true; }
 #include <esp_mac.h>
 #endif
 
+// The audio task can observe Talk before or after buttonService closes Muse.
+// Keep the consumed press visible until release in either ordering.
+static std::atomic<bool> pttClosedMuse{false};
+static bool museBlocksTalk();
+
 #ifdef RELAY_CELLULAR
 #include "cellular.h"
 #include "cellular_policy.h"  // the power-off budget a restart waits for
@@ -612,13 +617,15 @@ static bool board06DrainSpeaker() {
 }
 
 // The opening sound means the microphone is open. A press cannot become
-// speech with the relay away, or while an earlier request is still uploading
-// (startRecording refuses both), so that press is silent from down to up.
+// speech with the relay away, during an earlier upload, or when the press
+// only closes Muse pairing, so that press is silent from down to up.
 // Decided once, on the press: recovery halfway must not start a late sound.
 static bool board06TalkRefused(bool down) {
   static bool wasDown = false, refused = false;
   if (!down) refused = false;
-  else if (!wasDown) refused = !wsOpen || (recording && !micCapturing);
+  else if (!wasDown)
+    refused = !wsOpen || (recording && !micCapturing)
+        || museBlocksTalk() || pttClosedMuse.load();
   wasDown = down;
   return refused;
 }
@@ -1288,27 +1295,55 @@ static void configureRelaySocket() {
   tls.setHandshakeTimeout(kTlsHandshakeS);
 }
 
-// Reads the upgrade response: the 101 status line, then headers up to the
-// blank line. Each line feeds the watchdog, so the whole response has
-// kUpgradeTotalMs. Headers that stop arriving are a failed dial, not the end
-// of the headers: what is still in flight would be read as WebSocket frames.
+// Read one line with both an idle limit and the upgrade's absolute deadline.
+// Stream::readStringUntil restarts its wait after every character, so a slow
+// unfinished line can otherwise outlive the deadline and trip the watchdog.
+static bool wsReadUpgradeLine(String &line, uint32_t started, size_t &receivedBytes) {
+  static const size_t kMaxLineBytes = 1024, kMaxResponseBytes = 8192;
+  line = String();
+  uint32_t lastByteAt = millis();
+  while (uint32_t(millis() - started) < kUpgradeTotalMs) {
+    esp_task_wdt_reset();
+    if (tls.available()) {
+      const int next = tls.read();
+      if (next >= 0) {
+        lastByteAt = millis();
+        if (++receivedBytes > kMaxResponseBytes) return false;
+        if (next == '\n') return true;
+        if (line.length() >= kMaxLineBytes) return false;
+        line += char(next);
+        continue;
+      }
+    }
+    if (!tls.connected() || uint32_t(millis() - lastByteAt) >= kUpgradeReadMs)
+      return false;
+    delay(10);
+  }
+  return false;
+}
+
+// Reads the 101 status and headers up to the blank line. A stalled, oversized
+// or unfinished response fails the dial instead of becoming WebSocket bytes.
 static bool wsAwaitUpgrade() {
   const uint32_t started = millis();
-  while (!tls.available() && uint32_t(millis() - started) < 10000) {
+  while (tls.connected() && !tls.available() && uint32_t(millis() - started) < 10000) {
     delay(10);
     esp_task_wdt_reset();
   }
-  String status = tls.readStringUntil('\n');
-  esp_task_wdt_reset();
+  size_t receivedBytes = 0;
+  String status;
+  if (!wsReadUpgradeLine(status, started, receivedBytes)) {
+    Serial.println("[ws] upgrade response never finished");
+    return false;
+  }
   if (status.indexOf("101") < 0) {
     Serial.printf("[ws] handshake rejected: %s\n", status.c_str());
     return false;
   }
   while (tls.connected() && uint32_t(millis() - started) < kUpgradeTotalMs) {
-    String line = tls.readStringUntil('\n');
-    esp_task_wdt_reset();  // each header line may wait kUpgradeReadMs
+    String line;
+    if (!wsReadUpgradeLine(line, started, receivedBytes)) break;
     if (line == "\r") return true;
-    if (!line.length()) break;
   }
   Serial.println("[ws] upgrade response never finished");
   return false;
@@ -1844,7 +1879,12 @@ static void retryPlayback() {
 // ---------------------------------------------------------------------------
 
 enum class MuseMode { Off, Asking, Open, Saving, Paired, Failed };
-static MuseMode museMode = MuseMode::Off;
+static std::atomic<MuseMode> museMode{MuseMode::Off};
+
+static bool museBlocksTalk() {
+  const MuseMode mode = museMode.load();
+  return mode != MuseMode::Off && mode != MuseMode::Paired;
+}
 
 #ifdef RELAY_CELLULAR
 static void museStop() {}
@@ -2589,17 +2629,18 @@ static void buttonService() {
   // Quick taps never leave the Device; three of them open Muse pairing.
   static PttTaps pttTaps;
   static uint32_t pttPressedAt = 0;
-  static bool pttClosedMuse = false;
   if (speak != lastSpeak) {
     lastChange = millis();
     if (speak == LOW) {
       pttPressedAt = millis();
-      pttClosedMuse = museMode != MuseMode::Off && museMode != MuseMode::Paired;
+      const bool closesMuse = museBlocksTalk();
+      pttClosedMuse.store(closesMuse);
       if (museMode != MuseMode::Off) museStop();
-      if (!pttClosedMuse) startRecording();
+      if (!closesMuse) startRecording();
     } else {
       stopRecording();
-      if (!pttClosedMuse && pttTaps.release(pttPressedAt, millis())) museStart();
+      if (!pttClosedMuse.load() && pttTaps.release(pttPressedAt, millis())) museStart();
+      pttClosedMuse.store(false);
     }
     lastSpeak = speak;
   }
@@ -3091,6 +3132,7 @@ static void board06OtaService() {
     if (!board06RegisteredAt && networkConnected()) board06RegisteredAt = now | 1;
     if (board06RegisteredAt && uint32_t(now - board06RegisteredAt) >= kOtaVerifyDeadlineMs) {
       Serial.println("[ota] new image never reached the relay; rolling back");
+      modemOffForRestart();
       pcb06_ota::rollBack();
     }
     return;

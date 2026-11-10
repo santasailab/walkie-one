@@ -20,8 +20,8 @@ constexpr uint32_t kReadyMs = 20000, kRegisterMs = 90000, kIpMs = 30000;
 constexpr uint32_t kOffMs = 3000;
 enum class State {
   Off, Starting, Sim, Baud, Registering, Dialing, Online, Backoff,
-  StorageError, NoAt, SimLocked, ApnError, BaudError, AttachError, PppError, Restarting,
-  ShutDown
+  StorageError, NoAt, SimLocked, NetworkTimeError, ApnError, BaudError, AttachError,
+  PppError, Restarting, ShutDown
 };
 
 portMUX_TYPE configLock = portMUX_INITIALIZER_UNLOCKED;
@@ -56,6 +56,7 @@ const char *stateName(State value) {
     case State::StorageError: return "configuration could not be saved; radio off";
     case State::NoAt: return "no AT response";
     case State::SimLocked: return "SIM missing, locked or not ready";
+    case State::NetworkTimeError: return "modem network-time update could not be disabled";
     case State::ApnError: return "modem rejected mobile data profile";
     case State::BaudError: return "UART capability or speed verification failed";
     case State::AttachError: return "network attachment timeout";
@@ -95,10 +96,15 @@ void pinsOff() {
 
 bool powerPin(int pin, int level, uint32_t generation) {
   portENTER_CRITICAL(&configLock);
-  const bool allow = desired.enabled && generation == desiredGeneration;
-  if (allow) digitalWrite(pin, level);
+  // Serialize supply-on with shutdown: once the caller observes powered-down,
+  // this worker must not energize the modem after shutdown reports completion.
+  const bool allow = desired.enabled && generation == desiredGeneration &&
+                     !shutdownRequested.load();
+  if (allow) {
+    digitalWrite(pin, level);
+    if (pin == kSupply) supplyLive.store(level == HIGH);
+  }
   portEXIT_CRITICAL(&configLock);
-  if (allow && pin == kSupply) supplyLive.store(level == HIGH);
   return allow;
 }
 
@@ -191,6 +197,17 @@ int discoverBaud(uint32_t generation) {
   return 0;
 }
 
+bool disableNetworkTimeUpdates(uint32_t generation) {
+  String response;
+  if (!rawAt("AT+CTZU?", response, 5000, generation)) return false;
+  const int mode = cellular_policy::taggedNumber(response.c_str(), "+CTZU:");
+  if (mode == 0) return true;
+  // CTZU is persistent. Read first to avoid rewriting a repaired modem's flash.
+  if (mode < 0 || !rawAt("AT+CTZU=0", response, 5000, generation)) return false;
+  return rawAt("AT+CTZU?", response, 5000, generation) &&
+         cellular_policy::taggedNumber(response.c_str(), "+CTZU:") == 0;
+}
+
 bool commandAt(const char *command, String &response, uint32_t generation,
                int timeout = 1000) {
   // Never query signal, attachment, identities or any AT command in DATA mode.
@@ -223,15 +240,20 @@ bool connectAttempt(const Config &config, uint32_t generation, int &baudCeiling)
     if (!waitFor(500, generation)) return false;
   }
   if (!simReady) { state.store(State::SimLocked); return false; }
-  // Ask for the network's time and zone at attach. Optional: a modem or
-  // network without it leaves the clock to SNTP and the build stamp.
-  rawAt("AT+CTZU=1", response, 1000, generation);
   // LTE attachment uses the modem's stored PDP context. PPP.setApn() only
   // prepares a later dial, so apply the selected APN before enabling the radio.
   char profileCommand[cellular_policy::kMaxApn + 40];
   snprintf(profileCommand, sizeof(profileCommand), "AT+CGDCONT=1,\"IP\",\"%s\"", config.apn);
-  if (!rawAt("AT+CFUN=4", response, 25000, generation) ||
-      !rawAt(profileCommand, response, 5000, generation) ||
+  if (!rawAt("AT+CFUN=4", response, 25000, generation)) {
+    state.store(State::ApnError); return false;
+  }
+  // Network time updates can trigger a SIM7672 flash-write assertion on attach.
+  // Keep automatic updates disabled; a readable modem clock is only a best-effort
+  // seed for the ESP32, which synchronizes independently through SNTP.
+  if (!disableNetworkTimeUpdates(generation)) {
+    state.store(State::NetworkTimeError); return false;
+  }
+  if (!rawAt(profileCommand, response, 5000, generation) ||
       !rawAt("AT+CFUN=1", response, 25000, generation)) {
     state.store(State::ApnError); return false;
   }
@@ -287,7 +309,8 @@ bool connectAttempt(const Config &config, uint32_t generation, int &baudCeiling)
   if (!attached) { state.store(State::AttachError); return false; }
   if (commandAt("AT+CSQ", response, generation))
     cachedRssi.store(cellular_policy::signalDbm(response.c_str()));
-  // The network's time can arrive just after attachment: look three times.
+  // Read the modem clock when available without enabling automatic network
+  // updates. Its default/unset value leaves TLS to SNTP and the build stamp.
   for (int look = 0; look < 3; ++look) {
     if (look && !waitFor(500, generation)) return false;
     if (!commandAt("AT+CCLK?", response, generation)) break;
@@ -312,7 +335,8 @@ bool connectAttempt(const Config &config, uint32_t generation, int &baudCeiling)
     state.store(State::PppError); return false;
   }
   portENTER_CRITICAL(&configLock);
-  const bool stillEnabled = desired.enabled && desiredGeneration == generation;
+  const bool stillEnabled = desired.enabled && desiredGeneration == generation &&
+                            !shutdownRequested.load();
   if (stillEnabled) dataUp.store(true);
   portEXIT_CRITICAL(&configLock);
   if (!stillEnabled) return false;
@@ -438,11 +462,16 @@ void cellularService() {
 
 bool cellularConnected() { return dataUp.load(); }
 void cellularRestart() { restartRequested.store(true); }
-void cellularShutdown() { shutdownRequested.store(true); dataUp.store(false); }
+void cellularShutdown() {
+  portENTER_CRITICAL(&configLock);
+  shutdownRequested.store(true);
+  dataUp.store(false);
+  portEXIT_CRITICAL(&configLock);
+}
 bool cellularPoweredDown() { return !supplyLive.load(); }
 
 // Runs on from the last reading. After 49 days without a new session millis()
-// wraps and this falls behind; the caller never moves its clock backward.
+// wraps and this falls behind; SNTP remains authoritative once synchronized.
 bool cellularNetworkTime(int64_t &utcSeconds) {
   portENTER_CRITICAL(&configLock);
   const int64_t utc = networkUtc;

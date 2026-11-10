@@ -43,6 +43,10 @@ inline unsigned delays = 0, beginCalls = 0, cmdCalls = 0, endCalls = 0;
 inline int lastBaud = 0, modemBaud = 115200;
 inline std::string modemApn;
 inline bool radioOnline = true, rejectProfile = false, ignoreBaudChange = false;
+inline int networkTimeMode = 1;
+inline unsigned networkTimeWrites = 0, networkTimeReads = 0;
+inline bool rejectNetworkTime = false, ignoreNetworkTime = false;
+inline bool rejectNetworkTimeQuery = false;
 inline bool rawSilent = false, attached = true, ip = true, saveFails = false;
 inline std::string capability = "+IPR: (115200,230400,460800)";
 inline std::string log, apn;
@@ -50,7 +54,7 @@ inline std::string rawReply;
 inline std::string clock = "+CCLK: \"70/01/01,00:00:12+00\"";
 inline uint32_t rawDelayMs = 0;
 inline std::vector<std::pair<uint32_t, int>> baudChanges;
-inline std::function<void()> onData, onDelay;
+inline std::function<void()> onData, onDelay, onDefault;
 inline std::vector<uint8_t> stored;
 inline unsigned putCalls = 0;
 struct PinEvent { uint32_t at; int pin, level; };
@@ -105,7 +109,23 @@ class HardwareSerial {
       if (command.rfind("AT+IPR=", 0) == 0 && command != "AT+IPR=?\r" && !fake_cell::ignoreBaudChange)
         fake_cell::modemBaud = std::stoi(command.substr(7));
       if (command == "AT+CFUN=4\r") fake_cell::radioOnline = false;
-      if (command == "AT+CFUN=1\r") fake_cell::radioOnline = true;
+      if (command == "AT+CFUN=1\r") {
+        assert(fake_cell::networkTimeMode == 0);
+        fake_cell::radioOnline = true;
+      }
+      const bool timeWrite = command == "AT+CTZU=0\r";
+      // No startup path may re-enable the setting that crashes affected modems.
+      assert(command.rfind("AT+CTZU=", 0) != 0 || timeWrite);
+      if (timeWrite) {
+        assert(!fake_cell::radioOnline);
+        ++fake_cell::networkTimeWrites;
+        if (!fake_cell::rejectNetworkTime && !fake_cell::ignoreNetworkTime)
+          fake_cell::networkTimeMode = 0;
+      }
+      if (command == "AT+CTZU?\r") {
+        ++fake_cell::networkTimeReads;
+        response += "+CTZU: " + std::to_string(fake_cell::networkTimeMode) + "\r\n";
+      }
       const std::string prefix = "AT+CGDCONT=1,\"IP\",\"";
       if (command.rfind(prefix, 0) == 0) {
         assert(!fake_cell::radioOnline);
@@ -114,7 +134,10 @@ class HardwareSerial {
       }
       if (command == "AT+CPIN?\r") response += "+CPIN: READY\r\n";
       if (command == "AT+IPR=?\r") response += fake_cell::capability + "\r\n";
-      response += (command.rfind(prefix, 0) == 0 && fake_cell::rejectProfile) ? "ERROR\r\n" : "OK\r\n";
+      const bool rejected = (timeWrite && fake_cell::rejectNetworkTime) ||
+                            (command == "AT+CTZU?\r" && fake_cell::rejectNetworkTimeQuery) ||
+                            (command.rfind(prefix, 0) == 0 && fake_cell::rejectProfile);
+      response += rejected ? "ERROR\r\n" : "OK\r\n";
       if (!fake_cell::rawReply.empty()) response = fake_cell::rawReply;
       rx.insert(rx.end(), response.begin(), response.end());
       readyAt = fake_cell::now + fake_cell::rawDelayMs;
@@ -144,7 +167,7 @@ struct PPPFake {
   int mode() const { return currentMode; }
   bool mode(int m) { currentMode = m; if (fake_cell::onData) fake_cell::onData(); return true; }
   bool hasIP() const { return fake_cell::ip; }
-  bool setDefault() { return true; }
+  bool setDefault() { if (fake_cell::onDefault) fake_cell::onDefault(); return true; }
   bool cmd(const char *s, String &out, int timeout) {
     assert(currentMode == ESP_MODEM_MODE_COMMAND && timeout <= 1000);
     ++fake_cell::cmdCalls;

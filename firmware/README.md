@@ -49,9 +49,14 @@ your server uses another CA, replace `RELAY_CA` in `relay_client.ino` with the
 appropriate **public CA certificate** and rebuild. Keep `tls.setCACert` and hostname verification enabled; do not use
 `setInsecure`. Test your public WSS route before installing a device build.
 
-Certificate validation needs a clock. The firmware starts from the mobile
-network's time when the modem reports one, lets SNTP correct it when reachable,
-and falls back to the image's build date. The SIM7672G reports that time in
+Certificate validation needs a clock. The firmware can seed its clock from a
+plausible modem `AT+CCLK?` reading, lets SNTP correct it when reachable,
+and falls back to the image's build date. Automatic modem time updates stay
+disabled (`AT+CTZU=0`): enabling them caused repeated internal flash-write
+crashes on an inspected SIM7672G B05. Startup reads that persistent setting,
+changes it only when needed and verifies the result before enabling the radio.
+A modem with no valid clock leaves the ESP32 dependent on SNTP or the build
+fallback. The SIM7672G reports its time in
 UTC with the network's zone appended; the firmware uses the digits as UTC and
 ignores the zone, so a modem that reports local time instead would be off by
 that zone until SNTP answers. A clock more than an hour away from the
@@ -59,7 +64,8 @@ network's time in either direction is replaced by it before each dial until
 SNTP has answered, so a wrong earlier seed does not outlive the soft-off
 sleep that keeps the clock running. That fallback stops working once the
 build is older than your server's current certificate, so do not rely on it:
-check that your SIM's network supplies time, or that SNTP is reachable.
+check that SNTP is reachable or the modem already has valid time. The firmware
+never enables automatic modem time updates to obtain it.
 
 Run `build_pcb06.py --help` for output and version options. Do not pass
 `--official` for personal builds. That option and `release.py` exist for release

@@ -11,6 +11,7 @@
 #include "played_receipt.h"
 #include "endpoint_availability.h"
 #include <cassert>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <functional>
@@ -70,8 +71,9 @@ bool playbackPlayStaged(){if(recording||playedReceipt.pending())return false;pla
 void wsSendText(const char*){++listenRequests;if(onListen)onListen();}
 void startRecording(){assert(levels[buttons.talk]==LOW);recording=micCapturing=true;}
 void stopRecording(){recording=micCapturing=false;}
-enum class MuseMode {Off,Paired};
-static MuseMode museMode=MuseMode::Off;
+enum class MuseMode {Off,Asking,Open,Saving,Paired,Failed};
+static std::atomic<MuseMode> museMode{MuseMode::Off};
+static std::atomic<bool> pttClosedMuse{false};
 void museStop(){museMode=MuseMode::Off;}
 void museStart(){}
 
@@ -154,6 +156,27 @@ int main(int argc,char** argv){
     // The next press can become speech and sounds as usual.
     levels[1]=LOW;board06ObservePtt();now+=20;board06ObservePtt();
     assert(board06PlayPttChunk() && writes==1 && board06PttPlayer.phase()==Pcb06PttPlayer::Phase::Open);
+  }else if(mode=="ptt-refused-muse-audio-first" || mode=="ptt-refused-muse-main-first"){
+    // The press closes an open Muse window instead of opening the mic. Either
+    // task can sample it first, and neither ordering may play a Talk cue.
+    museMode=MuseMode::Open;levels[1]=LOW;
+    if(mode=="ptt-refused-muse-main-first")service();
+    board06ObservePtt();now+=20;board06ObservePtt();service();
+    assert(museMode==MuseMode::Off && !recording && !micCapturing);
+    assert(!board06PttPlayer.active() && !board06PlayPttChunk() && writes==0);
+    // Keeping it held after Muse closes cannot start a late cue.
+    now+=100;board06ObservePtt();service();
+    assert(!board06PttPlayer.active() && !recording);
+    levels[1]=HIGH;service();board06ObservePtt();now+=20;board06ObservePtt();
+    // A fresh press after release is a normal Talk press.
+    levels[1]=LOW;service();board06ObservePtt();now+=20;board06ObservePtt();
+    assert(recording && micCapturing && board06PttPlayer.active());
+  }else if(mode=="ptt-muse-paired"){
+    // The completed-pairing result is allowed to close and start Talk at once.
+    museMode=MuseMode::Paired;levels[1]=LOW;
+    board06ObservePtt();now+=20;board06ObservePtt();service();
+    assert(museMode==MuseMode::Off && recording && micCapturing);
+    assert(board06PttPlayer.active() && board06PlayPttChunk());
   }else if(mode=="ptt-refused-after-silent-release"){
     // A release seen while muted or at volume zero still ends that press: the
     // next one is judged on its own, not on what the last press was allowed.

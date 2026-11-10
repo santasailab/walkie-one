@@ -66,6 +66,12 @@ class CellularDriverTests(unittest.TestCase):
         self.assertLess(
             buttons.index("modemOffForRestart();"), buttons.index("ESP.restart();")
         )
+        # The OTA API reboots immediately too; rollback must not bypass the
+        # same shutdown used before an ordinary firmware restart.
+        ota = function(sketch, "board06OtaService")
+        self.assertLess(
+            ota.index("modemOffForRestart();"), ota.index("pcb06_ota::rollBack();")
+        )
 
 
 if __name__ == "__main__":

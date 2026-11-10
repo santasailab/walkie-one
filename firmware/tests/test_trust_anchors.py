@@ -17,12 +17,14 @@ class TrustAnchorTests(unittest.TestCase):
 
     def test_relay_trusts_exactly_both_isrg_roots(self):
         bundle = re.search(
-            r'static const char \*RELAY_CA = R"CERT\((.*?)\)CERT";', self.sketch, re.S
+            r'static const char \*RELAY_CA = R"CERT\((.*?)\)CERT";',
+            self.sketch,
+            re.DOTALL,
         ).group(1)
         blocks = re.findall(
             r"-----BEGIN CERTIFICATE-----\n(.*?)-----END CERTIFICATE-----\n",
             bundle,
-            re.S,
+            re.DOTALL,
         )
         fingerprints = [
             hashlib.sha256(base64.b64decode(block)).hexdigest() for block in blocks
@@ -36,7 +38,7 @@ class TrustAnchorTests(unittest.TestCase):
                 r"-----BEGIN CERTIFICATE-----\n.*?-----END CERTIFICATE-----\n",
                 "",
                 bundle,
-                flags=re.S,
+                flags=re.DOTALL,
             ).strip(),
             "",
         )

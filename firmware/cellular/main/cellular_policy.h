@@ -125,12 +125,9 @@ inline int signalDbm(const char *response) {
   return csq >= 0 && csq <= 31 ? -113 + csq * 2 : -1;
 }
 
-// Wait after the given number of consecutive failed attempts. There is no
-// attempt limit: out of coverage, the radio is tried again every five minutes.
-// AT+CCLK? answers +CCLK: "yy/MM/dd,hh:mm:ss+zz": local time and its offset
-// from UTC in quarter hours. Returns UTC seconds since 1970, or 0 when the
-// reply is malformed or the modem has not heard the network's time yet (it
-// then reports its 1970 or 1980 default).
+// AT+CCLK? answers +CCLK: "yy/MM/dd,hh:mm:ss+zz". The SIM7672G reports
+// UTC digits with the local zone appended, as measured below. Returns UTC
+// seconds since 1970, or 0 for malformed or unset 1970/1980 clock defaults.
 inline int64_t networkTimeUtc(const char *response) {
   const char *p = response ? std::strstr(response, "+CCLK: \"") : nullptr;
   if (!p) return 0;
@@ -165,6 +162,8 @@ inline int64_t networkTimeUtc(const char *response) {
   return days * 86400 + field[3] * 3600 + field[4] * 60 + field[5];
 }
 
+// Wait after consecutive failed attempts, without an attempt limit.
+// Out of coverage, the delay increases to a maximum of five minutes.
 inline uint32_t retryDelayMs(unsigned attempts) {
   if (attempts <= 1) return 5000;
   if (attempts == 2) return 15000;

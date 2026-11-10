@@ -35,10 +35,6 @@ class ExtractCredentialTests(unittest.TestCase):
             provision.extract_credential(f"{self.credential}\n{self.credential}")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ProvisionOutputTests(unittest.TestCase):
     def test_device_output_and_identifier_are_never_echoed(self):
         import contextlib
@@ -182,7 +178,7 @@ class CellularSetupTests(unittest.TestCase):
             "[cell] APN save queued; radio off. CELL START enables and saves",
             "[cell] start/save queued; enabled setting survives restart",
         ]
-        arguments = dict(credential=None, pair_id=None, apn="internet")
+        arguments = {"credential": None, "pair_id": None, "apn": "internet"}
         # Queued is not saved: the firmware writes the settings afterwards.
         _, output, error = self.run_tool(accepted, **arguments)
         self.assertIsInstance(error, TimeoutError)
@@ -205,3 +201,7 @@ class CellularSetupTests(unittest.TestCase):
         )
         self.assertIsInstance(error, TimeoutError)
         self.assertEqual(sent, ["CELL STOP\n"])
+
+
+if __name__ == "__main__":
+    unittest.main()

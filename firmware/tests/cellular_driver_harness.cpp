@@ -22,11 +22,15 @@ void resetDriver() {
   fake_cell::log.clear();
   fake_cell::now = 0;
   fake_cell::beginCalls = fake_cell::cmdCalls = 0;
-  fake_cell::onDelay = fake_cell::onData = nullptr;
+  fake_cell::onDelay = fake_cell::onData = fake_cell::onDefault = nullptr;
   fake_cell::rawSilent = false;
   fake_cell::modemBaud = 115200;
   fake_cell::modemApn.clear();
   fake_cell::radioOnline = true;
+  fake_cell::networkTimeMode = 1;
+  fake_cell::networkTimeWrites = fake_cell::networkTimeReads = 0;
+  fake_cell::rejectNetworkTime = fake_cell::ignoreNetworkTime = false;
+  fake_cell::rejectNetworkTimeQuery = false;
   fake_cell::rejectProfile = fake_cell::ignoreBaudChange = false;
   fake_cell::saveFails = false;
   fake_cell::rawReply.clear();
@@ -56,6 +60,8 @@ int main() {
   Config config = snapshot(generation);
   int ceiling = 921600;
   assert(connectAttempt(config, generation, ceiling));
+  assert(fake_cell::networkTimeMode == 0 && fake_cell::networkTimeWrites == 1);
+  assert(fake_cell::networkTimeReads == 2);
   assert(negotiatedBaud.load() == 460800 && fake_cell::lastBaud == 460800);
   assert(cellularConnected() && cellularRssiDbm() == -83);
   assert(fake_cell::apn == "example.private");
@@ -77,6 +83,63 @@ int main() {
   Config saved{};
   std::memcpy(&saved, fake_cell::stored.data(), sizeof(saved));
   assert(cellular_policy::validConfig(saved) && !saved.enabled);
+  cleanup();
+
+  // Previously repaired modems already store CTZU=0 and need no flash rewrite.
+  resetDriver();
+  cellularCommand("CELL APN internet"); cellularCommand("CELL START");
+  config = snapshot(generation);
+  fake_cell::networkTimeMode = 0;
+  ceiling = 921600;
+  assert(connectAttempt(config, generation, ceiling));
+  assert(fake_cell::networkTimeMode == 0 && fake_cell::networkTimeWrites == 0);
+  assert(fake_cell::networkTimeReads == 1);
+  cleanup();
+
+  // An unreadable setting or rejected query must fail closed before PPP.
+  for (const bool rejectQuery : {false, true}) {
+    resetDriver();
+    cellularCommand("CELL APN internet"); cellularCommand("CELL START");
+    config = snapshot(generation);
+    fake_cell::networkTimeMode = -1;
+    fake_cell::rejectNetworkTimeQuery = rejectQuery;
+    ceiling = 921600;
+    assert(!connectAttempt(config, generation, ceiling));
+    assert(state.load() == State::NetworkTimeError && fake_cell::beginCalls == 0);
+    assert(!fake_cell::radioOnline && fake_cell::networkTimeWrites == 0);
+    cleanup();
+  }
+
+  // Local-time mode must also be disabled before the radio returns online.
+  resetDriver();
+  cellularCommand("CELL APN internet"); cellularCommand("CELL START");
+  config = snapshot(generation);
+  fake_cell::networkTimeMode = 3;
+  ceiling = 921600;
+  assert(connectAttempt(config, generation, ceiling));
+  assert(fake_cell::networkTimeMode == 0 && fake_cell::networkTimeWrites == 1);
+  assert(fake_cell::networkTimeReads == 2);
+  cleanup();
+
+  // Refusing or ignoring CTZU=0 must leave the radio off and never reach PPP.
+  resetDriver();
+  cellularCommand("CELL APN internet"); cellularCommand("CELL START");
+  config = snapshot(generation);
+  fake_cell::rejectNetworkTime = true;
+  ceiling = 921600;
+  assert(!connectAttempt(config, generation, ceiling));
+  assert(state.load() == State::NetworkTimeError && fake_cell::beginCalls == 0);
+  assert(!fake_cell::radioOnline);
+  cleanup();
+
+  resetDriver();
+  cellularCommand("CELL APN internet"); cellularCommand("CELL START");
+  config = snapshot(generation);
+  fake_cell::ignoreNetworkTime = true;
+  ceiling = 921600;
+  assert(!connectAttempt(config, generation, ceiling));
+  assert(state.load() == State::NetworkTimeError && fake_cell::beginCalls == 0);
+  assert(!fake_cell::radioOnline);
   cleanup();
 
   resetDriver();
@@ -120,8 +183,8 @@ int main() {
   assert(state.load() == State::AttachError && fake_cell::now < 95000);
   cleanup();
 
-  // The network's clock is read once attached, asked for before the radio
-  // comes up, and keeps running; a modem with no network time offers none.
+  // A readable modem clock is used without enabling automatic updates and
+  // keeps running; an unset modem clock offers no network-time seed.
   resetDriver();
   cellularCommand("CELL APN internet"); cellularCommand("CELL START");
   config = snapshot(generation);
@@ -142,6 +205,32 @@ int main() {
   assert(cellularNetworkTime(networkTime) &&
          networkTime == 1793966400 + (90500 + cellular_policy::kPowerOffHoldMs +
                                       cellular_policy::kPowerOffSettleMs) / 1000);
+
+  // A shutdown requested before startup forbids any later supply-on write.
+  // A caller that has observed powered-down must be able to restart safely.
+  resetDriver();
+  cellularCommand("CELL APN internet"); cellularCommand("CELL START");
+  config = snapshot(generation);
+  cellularShutdown();
+  assert(cellularPoweredDown());
+  assert(!powerPin(kSupply, HIGH, generation));
+  assert(fake_cell::pins[kSupply] == LOW && cellularPoweredDown());
+  ceiling = 921600;
+  assert(!connectAttempt(config, generation, ceiling));
+  assert(fake_cell::pins[kSupply] == LOW && !cellularConnected());
+  cleanup();
+
+  // Shutdown can race the final PPP activation. Publishing Online must not
+  // resurrect the data-up flag after cellularShutdown() has cleared it.
+  resetDriver();
+  cellularCommand("CELL APN internet"); cellularCommand("CELL START");
+  config = snapshot(generation);
+  fake_cell::onDefault = [] { cellularShutdown(); };
+  ceiling = 921600;
+  assert(!connectAttempt(config, generation, ceiling));
+  assert(!cellularConnected());
+  fake_cell::onDefault = nullptr;
+  cleanup();
 
   // A failed modem profile write cannot reach PPP or attempt a data session.
   resetDriver();

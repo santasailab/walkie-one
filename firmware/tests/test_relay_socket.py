@@ -13,7 +13,12 @@ class RelaySocketTests(unittest.TestCase):
         source = (FIRMWARE / "relay_client/relay_client.ino").read_text()
         functions = "\n".join(
             function(source, name)
-            for name in ("configureRelaySocket", "wsSendFrame", "wsAwaitUpgrade")
+            for name in (
+                "configureRelaySocket",
+                "wsSendFrame",
+                "wsReadUpgradeLine",
+                "wsAwaitUpgrade",
+            )
         )
         harness = (FIRMWARE / "tests/relay_socket_harness.cpp").read_text()
         with tempfile.TemporaryDirectory() as temporary:

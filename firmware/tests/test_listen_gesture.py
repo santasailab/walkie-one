@@ -27,6 +27,7 @@ class ListenGestureTests(unittest.TestCase):
                 "pausePlayback",
                 "abandonPlayback",
                 "handleMessage",
+                "museBlocksTalk",
                 "buttonService",
             )
         )

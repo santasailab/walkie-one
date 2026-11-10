@@ -2,6 +2,7 @@
 // validation are stubbed; all playback admission/state transitions are real.
 #define RELAY_CELLULAR
 #include <cassert>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -62,7 +63,8 @@ static void wsSendText(const char* text) {
 static void startRecording() { recording = true; }
 static void stopRecording() { recording = false; }
 enum class MuseMode { Off, Paired };
-static MuseMode museMode = MuseMode::Off;
+static std::atomic<MuseMode> museMode{MuseMode::Off};
+static std::atomic<bool> pttClosedMuse{false};
 static void museStart() {}
 static void museStop() { museMode = MuseMode::Off; }
 
